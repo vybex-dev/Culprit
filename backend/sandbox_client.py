@@ -1,3 +1,4 @@
+# backend/sandbox_client.py
 """
 sandbox_client.py — Sandbox execution wrapper for Performance Regression Detective.
 
@@ -96,12 +97,23 @@ class LocalGitSandbox(Sandbox):
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.timeout_s = timeout_s
 
-    def _lockfile_hash(self, worktree: Path) -> str | None:
-        for name in ("requirements.txt", "requirements.lock", "poetry.lock", "uv.lock"):
+    # Python-only, per AGENTS.md's "one ecosystem, go deep" rule. Both of these
+    # are formats `pip install -r` can actually consume. poetry.lock/uv.lock
+    # were dropped: _build_venv() had no way to install from them, so
+    # detecting one just produced a hash for an install step that silently
+    # installed nothing and then cached that empty venv as "good."
+    _LOCKFILE_CANDIDATES = ("requirements.txt", "requirements.lock")
+
+    def _find_lockfile(self, worktree: Path) -> Path | None:
+        for name in self._LOCKFILE_CANDIDATES:
             p = worktree / name
             if p.exists():
-                return hashlib.sha256(p.read_bytes()).hexdigest()[:16]
+                return p
         return None
+
+    def _lockfile_hash(self, worktree: Path) -> str | None:
+        lockfile = self._find_lockfile(worktree)
+        return hashlib.sha256(lockfile.read_bytes()).hexdigest()[:16] if lockfile else None
 
     def _venv_for_hash(self, lock_hash: str | None, worktree: Path) -> tuple[Path, bool]:
         """Returns (venv_dir, is_ephemeral). Ephemeral venvs (no lockfile
@@ -124,12 +136,16 @@ class LocalGitSandbox(Sandbox):
     def _build_venv(self, venv_dir: Path, worktree: Path) -> None:
         venv.create(venv_dir, with_pip=True, clear=True)
         pip = venv_dir / "bin" / "pip"
-        req = worktree / "requirements.txt"
-        if req.exists():
-            proc = subprocess.run(
-                [str(pip), "install", "-q", "-r", str(req)],
-                capture_output=True, text=True, timeout=300,
-            )
+        lockfile = self._find_lockfile(worktree)  # same file _lockfile_hash used
+        if lockfile is not None:
+            try:
+                proc = subprocess.run(
+                    [str(pip), "install", "-q", "-r", str(lockfile)],
+                    capture_output=True, text=True, timeout=300,
+                )
+            except subprocess.TimeoutExpired as e:
+                shutil.rmtree(venv_dir, ignore_errors=True)
+                raise SandboxError(f"dependency install timed out (300s) for {lockfile.name}") from e
             if proc.returncode != 0:
                 shutil.rmtree(venv_dir, ignore_errors=True)
                 raise SandboxError(f"dependency install failed: {proc.stderr[-2000:]}")
@@ -142,10 +158,13 @@ class LocalGitSandbox(Sandbox):
         venv_dir: Path | None = None
         venv_is_ephemeral = False
         try:
-            proc = subprocess.run(
-                ["git", "worktree", "add", "--detach", str(worktree), commit_sha],
-                cwd=self.repo_path, capture_output=True, text=True, timeout=60,
-            )
+            try:
+                proc = subprocess.run(
+                    ["git", "worktree", "add", "--detach", str(worktree), commit_sha],
+                    cwd=self.repo_path, capture_output=True, text=True, timeout=60,
+                )
+            except subprocess.TimeoutExpired as e:
+                raise SandboxError(f"checkout timed out (60s) for {commit_sha}") from e
             if proc.returncode != 0:
                 raise SandboxError(f"checkout failed for {commit_sha}: {proc.stderr}")
 
@@ -155,11 +174,16 @@ class LocalGitSandbox(Sandbox):
             scores: list[float] = []
             last_stdout = ""
             for i in range(n_runs):
-                run = subprocess.run(
-                    benchmark_command, shell=True, cwd=worktree,
-                    capture_output=True, text=True, timeout=self.timeout_s,
-                    env={**os.environ, "PATH": f"{venv_dir}/bin:{os.environ['PATH']}"},
-                )
+                try:
+                    run = subprocess.run(
+                        benchmark_command, shell=True, cwd=worktree,
+                        capture_output=True, text=True, timeout=self.timeout_s,
+                        env={**os.environ, "PATH": f"{venv_dir}/bin:{os.environ['PATH']}"},
+                    )
+                except subprocess.TimeoutExpired as e:
+                    raise SandboxError(
+                        f"benchmark run {i + 1}/{n_runs} timed out after {self.timeout_s}s for {commit_sha}"
+                    ) from e
                 last_stdout = run.stdout.strip()
                 if run.returncode != 0:
                     raise SandboxError(
