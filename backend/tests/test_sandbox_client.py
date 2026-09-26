@@ -121,6 +121,55 @@ def test_bad_commit_sha_raises(demo_repo):
         sandbox.run_benchmark("0" * 40, "python bench.py", n_runs=1)
 
 
+def test_apply_patch_and_benchmark_fixes_the_regression(demo_repo, tmp_path):
+    """The capability the Stack 2 (Fixer) session flagged as missing: apply
+    a patch on top of the regressed commit, then benchmark — proving Fixer
+    can verify whether its own patch actually recovers performance."""
+    repo, baseline_sha, regressed_sha = demo_repo
+    cache_dir = tmp_path / "cache"
+    sandbox = LocalGitSandbox(str(repo), cache_dir=str(cache_dir))
+
+    # A real patch: revert bench.py back to the fast (pre-regression) version.
+    diff = subprocess.run(
+        ["git", "diff", regressed_sha, baseline_sha, "--", "bench.py"],
+        cwd=repo, capture_output=True, text=True, check=True,
+    ).stdout
+
+    patched = sandbox.apply_patch_and_benchmark(regressed_sha, diff, "python bench.py", n_runs=3)
+    unpatched_baseline = sandbox.run_benchmark(baseline_sha, "python bench.py", n_runs=3)
+
+    assert patched.patched is True
+    assert len(patched.raw_scores) == 3
+    # patched (reverted) regressed commit should now run about as fast as
+    # the real baseline, not the ~8x-slower regressed speed.
+    assert max(patched.raw_scores) < 2 * max(unpatched_baseline.raw_scores)
+
+
+def test_apply_patch_and_benchmark_raises_on_a_patch_that_does_not_apply(demo_repo):
+    repo, _, regressed_sha = demo_repo
+    sandbox = LocalGitSandbox(str(repo))
+    garbage_patch = "this is not a real unified diff\nit should fail to apply\n"
+    with pytest.raises(SandboxError):
+        sandbox.apply_patch_and_benchmark(regressed_sha, garbage_patch, "python bench.py", n_runs=1)
+
+
+def test_apply_patch_and_benchmark_still_uses_the_dependency_cache(demo_repo, tmp_path):
+    """A patch that doesn't touch requirements.txt shouldn't force a
+    redundant dependency install — same lockfile-hash cache as run_benchmark."""
+    repo, baseline_sha, regressed_sha = demo_repo
+    cache_dir = tmp_path / "cache"
+    sandbox = LocalGitSandbox(str(repo), cache_dir=str(cache_dir))
+
+    sandbox.run_benchmark(baseline_sha, "python bench.py", n_runs=1)  # builds the cache
+    diff = subprocess.run(
+        ["git", "diff", regressed_sha, baseline_sha, "--", "bench.py"],
+        cwd=repo, capture_output=True, text=True, check=True,
+    ).stdout
+    sandbox.apply_patch_and_benchmark(regressed_sha, diff, "python bench.py", n_runs=1)
+
+    assert len(list(cache_dir.glob("venv-*"))) == 1  # reused, not rebuilt
+
+
 def test_unsupported_lockfile_does_not_silently_cache_a_broken_venv(demo_repo, tmp_path):
     """Regression test. Previously poetry.lock/uv.lock would produce a
     lock_hash (used for caching) even though _build_venv() only ever

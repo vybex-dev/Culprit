@@ -5,7 +5,9 @@ sandbox_client.py — Sandbox execution wrapper for Performance Regression Detec
 Per AGENT_SPECS.md / TRD.md §4, every candidate commit gets a fresh, isolated
 sandbox: checkout -> install deps (cached by lockfile hash) -> run the
 benchmark N times -> return every raw score (median/threshold comparison is
-the Bisector's job, not this module's).
+the Bisector's job, not this module's). apply_patch_and_benchmark() extends
+this for the Fixer/Verifier loop (AGENT_SPECS.md §3): same guarantees, plus
+applying a unified-diff patch on top of the commit before benchmarking.
 
 Two backends, one contract:
   - LocalGitSandbox: git worktree checkout + a venv cached by lockfile hash,
@@ -58,6 +60,7 @@ class BenchmarkResult:
     commit_sha: str
     raw_scores: list[float]
     stdout_tail: str = ""
+    patched: bool = False  # True when this result came from apply_patch_and_benchmark()
 
 
 class Sandbox(ABC):
@@ -76,6 +79,19 @@ class Sandbox(ABC):
 
         Must raise SandboxError rather than return a partial/fabricated
         result if checkout, install, or any single run fails.
+        """
+
+    @abstractmethod
+    def apply_patch_and_benchmark(
+        self, commit_sha: str, patch: str, benchmark_command: str, n_runs: int = 5
+    ) -> BenchmarkResult:
+        """Same guarantees as run_benchmark (fresh isolated checkout, cached
+        deps, every raw score returned), but applies `patch` (a unified
+        diff, as Fixer produces per AGENT_SPECS.md §3) on top of commit_sha
+        before installing/running. A patch that doesn't apply cleanly must
+        raise SandboxError — never be silently skipped or scored as if
+        nothing changed (AGENTS.md #1 applies to Fixer verification exactly
+        as it does to Bisector runs).
         """
 
 
@@ -150,8 +166,29 @@ class LocalGitSandbox(Sandbox):
                 shutil.rmtree(venv_dir, ignore_errors=True)
                 raise SandboxError(f"dependency install failed: {proc.stderr[-2000:]}")
 
+    def _apply_patch(self, worktree: Path, patch: str) -> None:
+        try:
+            proc = subprocess.run(
+                ["git", "apply", "--whitespace=fix", "-"],
+                cwd=worktree, input=patch, capture_output=True, text=True, timeout=30,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise SandboxError("patch apply timed out (30s)") from e
+        if proc.returncode != 0:
+            raise SandboxError(f"patch did not apply cleanly to {worktree.name}: {proc.stderr[-2000:]}")
+
     def run_benchmark(
         self, commit_sha: str, benchmark_command: str, n_runs: int = 5
+    ) -> BenchmarkResult:
+        return self._run_benchmark_in_worktree(commit_sha, benchmark_command, n_runs, patch=None)
+
+    def apply_patch_and_benchmark(
+        self, commit_sha: str, patch: str, benchmark_command: str, n_runs: int = 5
+    ) -> BenchmarkResult:
+        return self._run_benchmark_in_worktree(commit_sha, benchmark_command, n_runs, patch=patch)
+
+    def _run_benchmark_in_worktree(
+        self, commit_sha: str, benchmark_command: str, n_runs: int, *, patch: str | None
     ) -> BenchmarkResult:
         worktree = Path(tempfile.mkdtemp(prefix=f"prd_wt_{commit_sha[:8]}_"))
         worktree.rmdir()  # `git worktree add` requires the target not exist yet
@@ -167,6 +204,9 @@ class LocalGitSandbox(Sandbox):
                 raise SandboxError(f"checkout timed out (60s) for {commit_sha}") from e
             if proc.returncode != 0:
                 raise SandboxError(f"checkout failed for {commit_sha}: {proc.stderr}")
+
+            if patch is not None:
+                self._apply_patch(worktree, patch)  # raises SandboxError on failure
 
             lock_hash = self._lockfile_hash(worktree)
             venv_dir, venv_is_ephemeral = self._venv_for_hash(lock_hash, worktree)
@@ -197,9 +237,11 @@ class LocalGitSandbox(Sandbox):
                         f"last stdout line; got: {last_stdout!r}"
                     ) from e
                 scores.append(score)
-                log.info("sandbox.run", commit=commit_sha, run=i + 1, score=score)
+                log.info("sandbox.run", commit=commit_sha, run=i + 1, score=score, patched=patch is not None)
 
-            return BenchmarkResult(commit_sha=commit_sha, raw_scores=scores, stdout_tail=last_stdout)
+            return BenchmarkResult(
+                commit_sha=commit_sha, raw_scores=scores, stdout_tail=last_stdout, patched=patch is not None,
+            )
         finally:
             subprocess.run(
                 ["git", "worktree", "remove", "--force", str(worktree)],
@@ -230,6 +272,14 @@ class TokenFactorySandbox(Sandbox):
             "Factory Sandbox API once access is confirmed. Must return the "
             "same BenchmarkResult contract as LocalGitSandbox — every raw "
             "score, never a fabricated one (AGENTS.md #1)."
+        )
+
+    def apply_patch_and_benchmark(
+        self, commit_sha: str, patch: str, benchmark_command: str, n_runs: int = 5
+    ) -> BenchmarkResult:
+        raise NotImplementedError(
+            "TokenFactorySandbox.apply_patch_and_benchmark: wire up alongside "
+            "run_benchmark once Token Factory Sandbox API access is confirmed."
         )
 
 
