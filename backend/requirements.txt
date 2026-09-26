@@ -1,4 +1,7 @@
-# Stack 1 deps so far — will grow as api.py lands
+# Stack 1 deps — complete for api.py, models.py, sandbox_client.py, bisector.py
 structlog>=24.1
 pytest>=8.0
 httpx>=0.28
+fastapi>=0.141
+uvicorn>=0.54
+pydantic>=2
