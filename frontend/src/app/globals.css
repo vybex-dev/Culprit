@@ -1,0 +1,99 @@
+@import "tailwindcss";
+@import "@fontsource-variable/instrument-sans";
+@import "@fontsource-variable/jetbrains-mono";
+
+/*
+ * Color system per docs/build-prompts/BUILD_03_FRONTEND_DASHBOARD.md.
+ * --butter and --iris are given brand colors; everything else here is a
+ * derived addition (documented in that file) needed to carry a full
+ * dashboard UI. This is a single, deliberate light theme, not a light/dark
+ * pair — the brief's palette (paper background, ink text) IS the theme,
+ * so no prefers-color-scheme swap is implemented. See the hand-back notes
+ * for this flagged as a decision, not an oversight.
+ */
+:root {
+  /* given */
+  --butter: #fff275;
+  --iris: #3a0ca3;
+
+  /* derived neutrals (BUILD_03) */
+  --ink: #1a1523;
+  --paper: #fffdf7;
+  --iris-100: #ede4fb;
+  --iris-700: #2a0878;
+  --butter-700: #e6d948;
+
+  /* semantic (BUILD_03) — used sparingly, badges only */
+  --resolved: #2d9a5b;
+  --unresolved: #e1483d;
+
+  /* additional derived tokens (not in BUILD_03) needed to finish a real
+     UI: hairline rules, muted text, panel surface, and a dark "console"
+     surface for diffs/code, which conventionally read as terminal-like
+     regardless of the surrounding theme. */
+  --line: rgba(26, 21, 35, 0.12);
+  --line-strong: rgba(26, 21, 35, 0.22);
+  --muted: rgba(26, 21, 35, 0.6);
+  --surface: #ffffff;
+
+  --console-bg: #150f1e;
+  --console-text: rgba(255, 255, 255, 0.88);
+  --console-muted: rgba(255, 255, 255, 0.5);
+  --diff-add-bg: rgba(45, 154, 91, 0.18);
+  --diff-add-text: #8fe3ae;
+  --diff-del-bg: rgba(225, 72, 61, 0.18);
+  --diff-del-text: #ffafa6;
+  --cite-bg: var(--butter);
+  --cite-text: var(--ink);
+
+  --font-ui: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-data: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@theme inline {
+  --color-butter: var(--butter);
+  --color-iris: var(--iris);
+  --color-ink: var(--ink);
+  --color-paper: var(--paper);
+  --color-iris-100: var(--iris-100);
+  --color-iris-700: var(--iris-700);
+  --color-butter-700: var(--butter-700);
+  --color-resolved: var(--resolved);
+  --color-unresolved: var(--unresolved);
+  --color-line: var(--line);
+  --color-surface: var(--surface);
+  --color-muted: var(--muted);
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-data);
+}
+
+* {
+  border-color: var(--line);
+}
+
+html {
+  scroll-padding-top: env(safe-area-inset-top, 0px);
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+}
+
+:focus-visible {
+  outline: 2px solid var(--iris);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
