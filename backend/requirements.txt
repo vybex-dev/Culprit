@@ -1,0 +1,3 @@
+# Stack 1 deps so far — will grow as later phases (models.py, api.py) land
+structlog>=24.1
+pytest>=8.0
