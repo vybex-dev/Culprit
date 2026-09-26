@@ -3,7 +3,7 @@
 "use client";
 
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import type { TimelineEntry } from "@/lib/types";
 import { formatScore, formatTimestamp, shortSha } from "@/lib/format";
 
@@ -68,21 +68,49 @@ function makeDot(onSelectRegression: () => void) {
   return Dot;
 }
 
+function EmptyChart({ active }: { active: boolean }) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <div className="flex h-72 flex-col items-center justify-center gap-2.5 rounded-md border border-dashed border-line-strong text-center">
+      <div className="relative h-2 w-2" aria-hidden>
+        <span className="absolute inset-0 rounded-full bg-iris" />
+        {active && !reduceMotion && (
+          <motion.span
+            className="absolute inset-0 rounded-full bg-iris"
+            initial={{ opacity: 0.6, scale: 1 }}
+            animate={{ opacity: 0, scale: 3.2 }}
+            transition={{ duration: 1.6, repeat: Infinity, ease: "easeOut" }}
+          />
+        )}
+      </div>
+      <p className="text-sm text-ink">{active ? "Starting up" : "No commits scored yet"}</p>
+      {active && (
+        <p className="max-w-xs text-xs text-muted">
+          Waiting for the first sandbox to spin up. This page updates on its own — no need to refresh.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function TimelineChart({
   timeline,
   regressionCommit,
   onSelectRegression,
+  active = false,
 }: {
   timeline: TimelineEntry[];
   regressionCommit: string | null;
   onSelectRegression: () => void;
+  /** true while the bisector is actively running — draws a traveling
+   * scan cursor along the line so an in-progress search visibly reads as
+   * "in progress," not just "chart has fewer points right now." */
+  active?: boolean;
 }) {
+  const reduceMotion = useReducedMotion();
+
   if (timeline.length === 0) {
-    return (
-      <div className="flex h-72 items-center justify-center rounded-md border border-dashed border-line-strong text-sm text-muted">
-        No commits scored yet.
-      </div>
-    );
+    return <EmptyChart active={active} />;
   }
 
   const data: ChartPoint[] = timeline.map((entry) => ({
@@ -91,7 +119,7 @@ export function TimelineChart({
   }));
 
   return (
-    <div className="h-72 w-full">
+    <div className="relative h-72 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 18, right: 12, bottom: 4, left: 0 }}>
           <CartesianGrid stroke="var(--line)" vertical={false} />
@@ -120,6 +148,15 @@ export function TimelineChart({
           />
         </LineChart>
       </ResponsiveContainer>
+      {active && !reduceMotion && (
+        <motion.div
+          className="pointer-events-none absolute inset-y-3 left-0 w-24 bg-gradient-to-r from-transparent via-iris/[0.06] to-transparent"
+          initial={{ x: "-100%" }}
+          animate={{ x: "520%" }}
+          transition={{ duration: 2.6, repeat: Infinity, ease: "linear" }}
+          aria-hidden
+        />
+      )}
     </div>
   );
 }

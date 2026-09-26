@@ -1,20 +1,65 @@
 // FILE: frontend/src/components/dashboard/StatusRibbon.tsx — place at this path in the Culprit repo
 
 import clsx from "clsx";
+import { motion, useReducedMotion } from "motion/react";
 import type { JobState } from "@/lib/types";
 import { PIPELINE_STAGES, STAGE_LABEL, reachedStageIndex } from "@/lib/pipeline";
+
+function StageMarker({
+  isPast,
+  isCurrent,
+  isFuture,
+  isFailedHere,
+  isDoneOk,
+  isRunning,
+}: {
+  isPast: boolean;
+  isCurrent: boolean;
+  isFuture: boolean;
+  isFailedHere: boolean;
+  isDoneOk: boolean;
+  isRunning: boolean;
+}) {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <span className="relative flex h-2.5 w-2.5 items-center justify-center">
+      {isRunning && !reduceMotion && (
+        <motion.span
+          className="absolute inset-0 rounded-full bg-butter-700"
+          initial={{ opacity: 0.55, scale: 1 }}
+          animate={{ opacity: 0, scale: 2.6 }}
+          transition={{ duration: 1.4, repeat: Infinity, ease: "easeOut" }}
+          aria-hidden
+        />
+      )}
+      <span
+        className={clsx(
+          "relative h-2.5 w-2.5 rounded-full ring-4 ring-paper transition-colors",
+          isFailedHere && "bg-unresolved",
+          !isFailedHere && (isPast || isDoneOk) && "bg-iris",
+          !isFailedHere && isCurrent && !isDoneOk && "bg-butter-700",
+          !isFailedHere && isFuture && "bg-ink/15",
+        )}
+      />
+    </span>
+  );
+}
 
 export function StatusRibbon({ job }: { job: JobState }) {
   const currentIndex = reachedStageIndex(job);
   const failed = job.status === "failed";
   const progressPct = (currentIndex / (PIPELINE_STAGES.length - 1)) * 100;
+  const reduceMotion = useReducedMotion();
 
   return (
     <div className="relative pt-1" aria-label="Pipeline progress" role="group">
       <div className="pointer-events-none absolute left-0 right-0 top-[13px] h-px bg-line" aria-hidden />
-      <div
-        className={clsx("pointer-events-none absolute left-0 top-[13px] h-px transition-all", failed ? "bg-unresolved/60" : "bg-iris/60")}
-        style={{ width: `${progressPct}%` }}
+      <motion.div
+        className={clsx("pointer-events-none absolute left-0 top-[13px] h-px", failed ? "bg-unresolved/60" : "bg-iris/60")}
+        initial={false}
+        animate={{ width: `${progressPct}%` }}
+        transition={{ duration: reduceMotion ? 0 : 0.45, ease: "easeOut" }}
         aria-hidden
       />
       <ol className="relative flex justify-between">
@@ -24,17 +69,17 @@ export function StatusRibbon({ job }: { job: JobState }) {
           const isFuture = i > currentIndex;
           const isFailedHere = failed && isCurrent;
           const isDoneOk = stage === "done" && isCurrent && job.status === "done";
+          const isRunning = isCurrent && !isFailedHere && !isDoneOk;
 
           return (
             <li key={stage} className="flex flex-col items-center gap-1.5">
-              <span
-                className={clsx(
-                  "h-2.5 w-2.5 rounded-full ring-4 ring-paper transition-colors",
-                  isFailedHere && "bg-unresolved",
-                  !isFailedHere && (isPast || isDoneOk) && "bg-iris",
-                  !isFailedHere && isCurrent && !isDoneOk && "bg-butter-700",
-                  !isFailedHere && isFuture && "bg-ink/15",
-                )}
+              <StageMarker
+                isPast={isPast}
+                isCurrent={isCurrent}
+                isFuture={isFuture}
+                isFailedHere={isFailedHere}
+                isDoneOk={isDoneOk}
+                isRunning={isRunning}
               />
               <span
                 className={clsx(

@@ -46,6 +46,19 @@
   --cite-bg: var(--butter);
   --cite-text: var(--ink);
 
+  /* Trace/console surface — an iris-tinted near-black rather than a
+     generic dark grey, so the "live agent" surface reads as this
+     product's own console, not a bolted-on terminal theme. Used by
+     TraceFeed and anywhere else that shows the pipeline "thinking". */
+  --trace-bg: #120a24;
+  --trace-bg-raised: #1a1035;
+  --trace-line: rgba(255, 255, 255, 0.08);
+  --trace-text: rgba(255, 255, 255, 0.92);
+  --trace-muted: rgba(200, 190, 230, 0.55);
+  --trace-accent: var(--butter);
+  --trace-accent-dim: rgba(255, 242, 117, 0.6);
+  --trace-iris: #8f7bd6;
+
   --font-ui: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --font-data: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
 }
@@ -63,6 +76,13 @@
   --color-line: var(--line);
   --color-surface: var(--surface);
   --color-muted: var(--muted);
+  --color-trace-bg: var(--trace-bg);
+  --color-trace-bg-raised: var(--trace-bg-raised);
+  --color-trace-line: var(--trace-line);
+  --color-trace-text: var(--trace-text);
+  --color-trace-muted: var(--trace-muted);
+  --color-trace-accent: var(--trace-accent);
+  --color-trace-iris: var(--trace-iris);
   --font-sans: var(--font-ui);
   --font-mono: var(--font-data);
 }
@@ -96,4 +116,41 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Trace feed cursor blink — deliberately not `animate-pulse` (opacity
+   fade); a hard-cut blink reads as "live terminal", a fade reads as
+   "loading skeleton". Two different signals. */
+@keyframes trace-caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+.trace-caret {
+  animation: trace-caret 1s step-end infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .trace-caret {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* Thin scrollbar for the trace feed's own scroll region only — the rest
+   of the app keeps the OS default. */
+.trace-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--trace-line) transparent;
+}
+.trace-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.trace-scroll::-webkit-scrollbar-thumb {
+  background: var(--trace-line);
+  border-radius: 3px;
 }

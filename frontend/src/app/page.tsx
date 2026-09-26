@@ -5,8 +5,17 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { motion, useReducedMotion } from "motion/react";
 import { analyzeRepo, ApiError } from "@/lib/api";
 import { SectionLabel } from "@/components/ui";
+
+const TRACE_PREVIEW = [
+  "bisector started — binary search over commit history",
+  "commit 5daf6e3 scored 124.6 ms — +23.1% — regression candidate",
+  "guilty commit located — 5daf6e3",
+  "Nemotron 3 Ultra: analyzing guilty diff",
+  "root cause classified — N+1 queries",
+] as const;
 
 function Field({
   label,
@@ -52,8 +61,11 @@ export default function NewAnalysisPage() {
     }
   }
 
+  const reduceMotion = useReducedMotion();
+
   return (
-    <div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center gap-6 px-6 py-16">
+    <div className="mx-auto grid w-full max-w-5xl flex-1 grid-cols-1 items-center gap-12 px-6 py-16 lg:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-6 lg:mx-0">
       <div>
         <h1 className="text-2xl font-medium tracking-tight text-ink">Find a performance regression</h1>
         <p className="mt-1.5 text-sm text-muted">
@@ -125,6 +137,33 @@ export default function NewAnalysisPage() {
         </Link>
         .
       </p>
+      </div>
+
+      <div className="hidden lg:block" aria-hidden>
+        <div className="overflow-hidden rounded-lg border border-trace-line bg-trace-bg shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]">
+          <div className="flex items-center gap-2 border-b border-trace-line bg-trace-bg-raised px-3.5 py-2">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-trace-accent" />
+            <span className="font-mono text-[11px] tracking-wide text-trace-muted">Agent activity</span>
+          </div>
+          <div className="space-y-2 px-3.5 py-3 font-mono text-[12.5px]">
+            {TRACE_PREVIEW.map((line, i) => (
+              <motion.div
+                key={line}
+                initial={reduceMotion ? false : { opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: reduceMotion ? 0 : 0.25 + i * 0.35, ease: "easeOut" }}
+                className="truncate text-trace-text"
+              >
+                <span className="text-trace-iris">›</span> {line}
+              </motion.div>
+            ))}
+            <span className="trace-caret ml-[14px] inline-block h-[13px] w-[7px] translate-y-[2px] bg-trace-accent" />
+          </div>
+        </div>
+        <p className="mt-3 text-center text-xs text-muted">
+          You&apos;ll watch it work like this — every step, live, as it happens.
+        </p>
+      </div>
     </div>
   );
 }
