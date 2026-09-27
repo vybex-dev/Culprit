@@ -8,12 +8,8 @@ tests monkeypatch propose_patch at the module level, mirroring
 test_bisector.py's Layer B test monkeypatching call_nemotron.
 """
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import fixer  # noqa: E402  (module import so monkeypatch.setattr works)
 from fixer import (  # noqa: E402
     FixerError, FixProposal, PreviousAttemptResult, VerifyOutcome, run_fix_loop, run_fix_loop_live,

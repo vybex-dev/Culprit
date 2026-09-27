@@ -4,6 +4,8 @@ import type { JobState } from "@/lib/types";
 import { bisectingJob } from "./bisecting";
 import { bisectingRegressionFoundJob } from "./bisecting-regression-found";
 import { diagnosingJob } from "./diagnosing";
+import { doneNoRegressionJob } from "./done-no-regression";
+import { doneRegressionUndiagnosedJob } from "./done-regression-undiagnosed";
 import { doneResolvedJob } from "./done-resolved";
 import { doneUnresolvedJob } from "./done-unresolved";
 import { failedJob } from "./failed";
@@ -34,6 +36,18 @@ export const FIXTURES: FixtureEntry[] = [
     label: "Done — unresolved",
     description: "Attempt cap hit; honest diagnosis-only outcome.",
     job: doneUnresolvedJob,
+  },
+  {
+    key: "done-no-regression",
+    label: "Done — no regression",
+    description: "Every commit in range benchmarked clean; nothing to diagnose.",
+    job: doneNoRegressionJob,
+  },
+  {
+    key: "done-regression-undiagnosed",
+    label: "Done — undiagnosed",
+    description: "Regression found but no diagnosis attached — a defensive state, not an expected outcome.",
+    job: doneRegressionUndiagnosedJob,
   },
   { key: "failed", label: "Failed", description: "Job errored out mid-run.", job: failedJob },
 ];

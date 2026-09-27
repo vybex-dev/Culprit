@@ -9,12 +9,8 @@ real /search response shape matches what tavily_client.py assumes from
 public docs. See tavily_client.py's module docstring.
 """
 
-import sys
-from pathlib import Path
-
 import httpx
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tavily_client import TavilyRef, build_query, search_grounding  # noqa: E402
 
 
@@ -83,8 +79,43 @@ def test_http_error_returns_empty_not_raises():
     def handler(request):
         return httpx.Response(500, text="internal error")
 
-    refs = search_grounding("n_plus_one", ["x("], api_key="fake", client=_client_for(handler))
+    refs = search_grounding("n_plus_one", ["x("], api_key="fake", client=_client_for(handler), retry_delays_s=())
     assert refs == []
+
+
+def test_transient_5xx_retries_then_succeeds():
+    """CODE_REVIEW_FINDINGS.md #20 — same convention as models.py's
+    call_nemotron: a transient 500 shouldn't throw away this grounding
+    result on the first blip."""
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        if len(calls) < 2:
+            return httpx.Response(503, text="unavailable")
+        return httpx.Response(200, json={
+            "results": [{"title": "Recovered result", "url": "https://example.com/ok"}],
+        })
+
+    refs = search_grounding(
+        "n_plus_one", ["x("], api_key="fake", client=_client_for(handler), retry_delays_s=(0.0,),
+    )
+    assert refs == [TavilyRef(title="Recovered result", url="https://example.com/ok")]
+    assert len(calls) == 2
+
+
+def test_401_is_not_retried():
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(401, text="unauthorized")
+
+    refs = search_grounding(
+        "n_plus_one", ["x("], api_key="bad-key", client=_client_for(handler), retry_delays_s=(0.0, 0.0),
+    )
+    assert refs == []
+    assert len(calls) == 1
 
 
 def test_malformed_response_body_returns_empty_not_raises():

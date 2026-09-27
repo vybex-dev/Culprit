@@ -10,14 +10,11 @@ in real credentials.
 """
 
 import json
-import sys
-from pathlib import Path
 
 import httpx
 import pytest
 import structlog
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from models import NemotronCallError, call_nemotron  # noqa: E402
 
 
@@ -114,15 +111,85 @@ def test_malformed_twice_raises_and_does_not_fabricate():
 
 
 def test_http_error_raises_nemotron_call_error():
+    """A non-retryable client error (4xx) must fail immediately, no retries."""
     def handler(request):
-        return httpx.Response(500, text="internal error")
+        return httpx.Response(400, text="bad request")
 
     with pytest.raises(NemotronCallError):
         call_nemotron(
             job_id="j1", step="bisect", model="nano",
             system_prompt="sys", payload={"a": 1}, temperature=0.2,
-            api_key="fake", client=_client_for(handler),
+            api_key="fake", client=_client_for(handler), retry_delays_s=(),
         )
+
+
+def test_transient_5xx_retries_then_succeeds():
+    """CODE_REVIEW_FINDINGS.md #20: a transient 500 must not burn the whole
+    call — it should retry with backoff and succeed once the transient
+    condition clears, exactly like a real flaky upstream would."""
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        if len(calls) < 3:
+            return httpx.Response(500, text="internal error")
+        return _openai_response(content='{"verdict": "clean"}')
+
+    result = call_nemotron(
+        job_id="j1", step="bisect", model="nano",
+        system_prompt="sys", payload={"a": 1}, temperature=0.2,
+        api_key="fake", client=_client_for(handler), retry_delays_s=(0.0, 0.0),
+    )
+    assert result.parsed == {"verdict": "clean"}
+    assert len(calls) == 3
+
+
+def test_transient_error_exhausted_retries_raises():
+    def handler(request):
+        return httpx.Response(503, text="unavailable")
+
+    with pytest.raises(NemotronCallError):
+        call_nemotron(
+            job_id="j1", step="bisect", model="nano",
+            system_prompt="sys", payload={"a": 1}, temperature=0.2,
+            api_key="fake", client=_client_for(handler), retry_delays_s=(0.0, 0.0),
+        )
+
+
+def test_429_is_treated_as_retryable():
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        if len(calls) < 2:
+            return httpx.Response(429, text="rate limited")
+        return _openai_response(content='{"ok": true}')
+
+    result = call_nemotron(
+        job_id="j1", step="bisect", model="nano",
+        system_prompt="sys", payload={"a": 1}, temperature=0.2,
+        api_key="fake", client=_client_for(handler), retry_delays_s=(0.0,),
+    )
+    assert result.parsed == {"ok": True}
+    assert len(calls) == 2
+
+
+def test_400_is_not_retried():
+    """A 4xx (bad request/auth) will never succeed on retry — must fail on
+    the first attempt, not waste the retry budget."""
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(401, text="unauthorized")
+
+    with pytest.raises(NemotronCallError):
+        call_nemotron(
+            job_id="j1", step="bisect", model="nano",
+            system_prompt="sys", payload={"a": 1}, temperature=0.2,
+            api_key="fake", client=_client_for(handler), retry_delays_s=(0.0, 0.0),
+        )
+    assert len(calls) == 1
 
 
 def test_missing_api_key_raises_without_making_a_call():

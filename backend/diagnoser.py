@@ -133,6 +133,14 @@ class DiagnosisResult:
     # documented output schema; flagged as a useful addition for the
     # dashboard/logs, same spirit as bisector.py's CandidateEvaluation.rounds.
     citation_verification_failed: bool = False
+    # The diff this diagnosis was made against — this module already
+    # receives it as an input parameter (see diagnose()'s `diff` arg), it
+    # was just being discarded before reaching the caller. Threaded through
+    # so api.py can hand it to the frontend without a second fetch/read of
+    # the same commit (CODE_REVIEW_FINDINGS.md #8 — the frontend's
+    # DiagnosisSection/DiffViewer already render this the moment it's
+    # present, per frontend/README.md's "Known contract gap" note).
+    diff: str = ""
 
 
 def _validate_schema(parsed: dict, *, guilty_commit_sha: str) -> DiagnosisResult:
@@ -182,23 +190,35 @@ def _normalize_diff_line(line: str) -> str:
 
 
 def _verify_cited_lines(cited_lines: list[str], diff: str) -> bool:
-    """True only if EVERY entry in cited_lines verifies against diff —
-    either as a raw substring of the diff text, or as an exact match
-    against one of diff's lines with its leading +/- marker stripped (see
-    _normalize_diff_line). An empty cited_lines list never verifies: per
-    AGENT_SPECS.md §2, "if you cannot point to specific lines... use
-    category 'other'" — a non-'other' category with zero citations is
-    exactly the unearned-confidence case this check exists to catch."""
+    """True only if EVERY entry in cited_lines verifies against diff, as an
+    exact match against one of diff's actually-CHANGED lines (added `+` or
+    removed `-`, excluding the `+++`/`---` file-header lines) with its
+    leading marker stripped (see _normalize_diff_line). Unchanged context
+    lines — including a hunk header's trailing function-name text, e.g.
+    `@@ -10,6 +10,8 @@ def get_user_orders(user_id):` — are deliberately
+    excluded: they're not lines the commit touched, so citing one isn't
+    citing "the line responsible" (AGENTS.md rule 5). There is no
+    raw-substring-of-the-whole-diff fallback: that used to let a citation
+    of any unchanged line in the diff (or an incidental hunk-header
+    substring) count as a verified citation of the change itself — see
+    CODE_REVIEW_FINDINGS.md #6, which this fixes. An empty cited_lines
+    list never verifies: per AGENT_SPECS.md §2, "if you cannot point to
+    specific lines... use category 'other'" — a non-'other' category with
+    zero citations is exactly the unearned-confidence case this check
+    exists to catch."""
     if not cited_lines:
         return False
-    normalized_diff_lines = {_normalize_diff_line(l) for l in diff.splitlines()}
+    changed_lines = (
+        l for l in diff.splitlines()
+        if l[:1] in ("+", "-") and not l.startswith(("+++", "---"))
+    )
+    normalized_diff_lines = {_normalize_diff_line(l) for l in changed_lines}
     for cited in cited_lines:
-        candidate = cited.strip()
+        candidate = _normalize_diff_line(cited)
         if not candidate:
             return False
-        if candidate in diff or candidate in normalized_diff_lines:
-            continue
-        return False
+        if candidate not in normalized_diff_lines:
+            return False
     return True
 
 
@@ -214,6 +234,7 @@ def _downgrade_to_other(diagnosis: DiagnosisResult) -> DiagnosisResult:
         cited_lines=diagnosis.cited_lines,
         confidence="low",
         citation_verification_failed=True,
+        diff=diagnosis.diff,
     )
 
 
@@ -247,6 +268,7 @@ def diagnose(
         system_prompt=DIAGNOSER_SYSTEM_PROMPT, payload=base_payload, temperature=temperature,
     )
     diagnosis = _validate_schema(result.parsed, guilty_commit_sha=guilty_commit_sha)
+    diagnosis.diff = diff
 
     if diagnosis.category != "other" and not _verify_cited_lines(diagnosis.cited_lines, diff):
         log.warning(
@@ -268,6 +290,7 @@ def diagnose(
             payload=retry_payload, temperature=temperature,
         )
         diagnosis = _validate_schema(result.parsed, guilty_commit_sha=guilty_commit_sha)
+        diagnosis.diff = diff
 
         if diagnosis.category != "other" and not _verify_cited_lines(diagnosis.cited_lines, diff):
             log.error(

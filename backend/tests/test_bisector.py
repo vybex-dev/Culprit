@@ -15,14 +15,11 @@ import math
 import random
 import statistics
 import subprocess
-import sys
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import bisector  # noqa: E402  (module import so monkeypatch.setattr works)
-from bisector import BisectionError, NanoVerdict, bisect, evaluate_candidate  # noqa: E402
+from bisector import BisectionError, NanoVerdict, bisect, evaluate_candidate, list_commits_between  # noqa: E402
 from models import NemotronResult  # noqa: E402
 from sandbox_client import LocalGitSandbox  # noqa: E402
 
@@ -200,6 +197,25 @@ def test_regression_still_found_despite_noise(seed):
 
     regression_commit, _ = bisect(commits, evaluate=evaluate)
     assert regression_commit == commits[k]  # noise shouldn't bury a real regression either
+
+
+# ---------------------------------------------------------------------------
+# Layer B: list_commits_between() — subprocess timeout handling
+# (CODE_REVIEW_FINDINGS.md #7)
+# ---------------------------------------------------------------------------
+
+def test_list_commits_between_wraps_timeout_as_bisection_error(monkeypatch, tmp_path):
+    """A hanging `git rev-list` (e.g. a huge repo) must surface as a clean
+    BisectionError, not an uncaught subprocess.TimeoutExpired stack trace —
+    same convention already proven in sandbox_client.py."""
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs.get("timeout", 30))
+
+    monkeypatch.setattr(bisector.subprocess, "run", fake_run)
+
+    with pytest.raises(BisectionError, match="timed out"):
+        list_commits_between(str(tmp_path), "start_sha", "end_sha")
 
 
 # ---------------------------------------------------------------------------

@@ -7,12 +7,8 @@ since diagnoser.py has no client-injection param of its own — same reasoning
 as bisector.bisect_repo's tests.
 """
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import diagnoser  # noqa: E402  (module import so monkeypatch.setattr works)
 from diagnoser import DiagnoserError  # noqa: E402
 from models import NemotronResult  # noqa: E402
@@ -244,8 +240,19 @@ def test_unknown_confidence_raises_diagnoser_error(monkeypatch):
 # _verify_cited_lines / _normalize_diff_line — direct unit tests
 # ---------------------------------------------------------------------------
 
-def test_verify_cited_lines_exact_substring_passes():
-    assert diagnoser._verify_cited_lines(["def get_user_orders(user_id):"], REAL_DIFF)
+def test_verify_cited_lines_rejects_hunk_header_context_not_actually_changed():
+    """`def get_user_orders(user_id):` only appears in REAL_DIFF's hunk
+    header (`@@ ... def get_user_orders(user_id): @@`) — unchanged context
+    used to locate the hunk, never an added/removed line. A citation of it
+    must NOT verify: citing unchanged code isn't citing the line
+    responsible for the regression (AGENTS.md rule 5). This was the bug in
+    CODE_REVIEW_FINDINGS.md #6 — the old raw-substring-of-the-whole-diff
+    check let this pass."""
+    assert not diagnoser._verify_cited_lines(["def get_user_orders(user_id):"], REAL_DIFF)
+
+
+def test_verify_cited_lines_accepts_actual_added_line():
+    assert diagnoser._verify_cited_lines(["order.line_items = LineItem.objects.filter(order_id=order.id)"], REAL_DIFF)
 
 
 def test_verify_cited_lines_rejects_line_not_in_diff():

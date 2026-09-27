@@ -1,7 +1,10 @@
 // FILE: frontend/src/lib/api.ts — place at this path in the Culprit repo
 //
 // Thin client for backend/api.py. Base URL comes from
-// NEXT_PUBLIC_API_BASE_URL (see .env.local.example) — per
+// NEXT_PUBLIC_API_BASE_URL (see .env.example — CODE_REVIEW_FINDINGS.md
+// #12: this comment used to point at ".env.local.example", a file that
+// never existed; frontend/README.md's own setup steps already say
+// ".env.example", so that's the name standardized on here too) — per
 // BUILD_00_OVERVIEW.md's shared env vars, e.g. http://localhost:8000.
 
 import type { AnalyzeRequest, AnalyzeResponse, JobState } from "./types";
@@ -20,7 +23,7 @@ function apiBase(): string {
   if (!base) {
     throw new ApiError(
       0,
-      "NEXT_PUBLIC_API_BASE_URL is not set — copy .env.local.example to .env.local and point it at the backend.",
+      "NEXT_PUBLIC_API_BASE_URL is not set — copy .env.example to .env.local and point it at the backend.",
     );
   }
   return base.replace(/\/+$/, "");

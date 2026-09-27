@@ -77,6 +77,16 @@ _RETRY_NUDGE = (
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
+# Backoff delays before each transient-error retry of a single HTTP call —
+# distinct from the JSON-retry above, which is about the model's OUTPUT,
+# not the network. (0.5s, 1.5s) -> up to 3 attempts total per call.
+# CODE_REVIEW_FINDINGS.md #20: a single dropped connection or transient
+# 5xx/429 used to burn the whole call immediately, exactly like a real
+# client error (bad request, bad auth) that retrying could never fix.
+# Injectable (see call_nemotron's `retry_delays_s` param) so tests can run
+# this near-instantly instead of eating the real backoff.
+_DEFAULT_TRANSIENT_RETRY_DELAYS_S: tuple[float, ...] = (0.5, 1.5)
+
 
 class NemotronCallError(Exception):
     """Raised when a call fails outright: HTTP/network error, unexpected
@@ -92,6 +102,16 @@ class NemotronResult:
     attempts: int  # 1 or 2
     model_id: str
     latency_s: float
+
+
+def _is_retryable_transient_error(e: httpx.HTTPError) -> bool:
+    """Retry connection-level failures (timeout, refused, reset, DNS —
+    httpx.RequestError) and server-side 5xx/429; never a 4xx like 400/401,
+    which retrying can never fix and would just waste the retry budget on
+    a call that was never going to succeed."""
+    if isinstance(e, httpx.HTTPStatusError):
+        return e.response.status_code >= 500 or e.response.status_code == 429
+    return isinstance(e, httpx.RequestError)
 
 
 def _extract_json(text: str) -> dict:
@@ -123,21 +143,41 @@ def _message_text(message: dict) -> str:
 def _call_once(
     *, client: httpx.Client, base_url: str, api_key: str, model_id: str,
     messages: list[dict], temperature: float, timeout_s: float,
+    retry_delays_s: tuple[float, ...] = _DEFAULT_TRANSIENT_RETRY_DELAYS_S,
 ) -> tuple[str, float]:
-    """One raw HTTP round-trip. Returns (message_text, latency_s). Raises
-    NemotronCallError on any HTTP/network failure or unexpected response
-    shape — never returns partial data."""
-    start = time.perf_counter()
-    try:
-        resp = client.post(
-            f"{base_url.rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={"model": model_id, "temperature": temperature, "messages": messages},
-            timeout=timeout_s,
-        )
-        resp.raise_for_status()
-    except httpx.HTTPError as e:
-        raise NemotronCallError(f"Nemotron API call failed: {e}") from e
+    """One logical Nemotron call, with its own small retry-with-backoff for
+    TRANSIENT network failures (see _is_retryable_transient_error) layered
+    underneath call_nemotron()'s malformed-JSON retry above it. Returns
+    (message_text, latency_s), where latency_s times only the FINAL,
+    successful round-trip (not time spent on earlier failed attempts or
+    backoff sleeps) — the number this module logs and passes on is meant
+    to describe the model's real response time, not this wrapper's retry
+    overhead. Raises NemotronCallError once retries are exhausted, or
+    immediately for a non-retryable error — never returns partial data."""
+    last_error: httpx.HTTPError | None = None
+    for attempt_idx, delay_s in enumerate((0.0, *retry_delays_s)):
+        if delay_s:
+            log.warning(
+                "nemotron.transient_error_retry",
+                error=str(last_error), retry_in_s=delay_s, attempt=attempt_idx + 1,
+            )
+            time.sleep(delay_s)
+        start = time.perf_counter()
+        try:
+            resp = client.post(
+                f"{base_url.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={"model": model_id, "temperature": temperature, "messages": messages},
+                timeout=timeout_s,
+            )
+            resp.raise_for_status()
+            break
+        except httpx.HTTPError as e:
+            last_error = e
+            if not _is_retryable_transient_error(e):
+                raise NemotronCallError(f"Nemotron API call failed: {e}") from e
+    else:
+        raise NemotronCallError(f"Nemotron API call failed after retries: {last_error}") from last_error
     latency_s = time.perf_counter() - start
     body = resp.json()
     try:
@@ -159,6 +199,7 @@ def call_nemotron(
     api_key: str | None = None,
     timeout_s: float = 60.0,
     client: httpx.Client | None = None,
+    retry_delays_s: tuple[float, ...] = _DEFAULT_TRANSIENT_RETRY_DELAYS_S,
 ) -> NemotronResult:
     """The one function every agent calls.
 
@@ -169,6 +210,10 @@ def call_nemotron(
         each agent's schema in AGENT_SPECS.md.
     client: inject an httpx.Client (e.g. with a MockTransport) for testing;
         a real one is created and closed automatically otherwise.
+    retry_delays_s: backoff delays before each transient-network-error
+        retry (default (0.5, 1.5), i.e. up to 3 attempts per HTTP call) —
+        override with () in tests that need to force/observe a transient
+        failure without actually sleeping.
     """
     base_url = base_url or _DEFAULT_BASE_URL
     api_key = api_key or os.environ.get("NEBIUS_API_KEY")
@@ -196,6 +241,7 @@ def call_nemotron(
             raw, latency_s = _call_once(
                 client=client, base_url=base_url, api_key=api_key, model_id=model_id,
                 messages=messages, temperature=temperature, timeout_s=timeout_s,
+                retry_delays_s=retry_delays_s,
             )
             log.info(
                 "nemotron.call",

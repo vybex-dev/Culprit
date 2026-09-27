@@ -1,4 +1,8 @@
-# Stack 1 deps — complete for api.py, models.py, sandbox_client.py, bisector.py
+# Deps for the whole backend — api.py, models.py, sandbox_client.py,
+# bisector.py, diagnoser.py, fixer.py, tavily_client.py. All of Stack 2
+# (diagnoser/fixer/tavily_client) reuses httpx + structlog rather than
+# needing anything new (no official Tavily SDK — tavily_client.py talks to
+# its REST API directly over httpx, same as models.py does for Nemotron).
 structlog>=24.1
 pytest>=8.0
 httpx>=0.28

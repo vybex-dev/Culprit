@@ -29,16 +29,21 @@ Nemotron):
   propose_patch(), but STILL takes `verify` as an injected parameter — see
   the flagged gap below).
 
-⚠️ Flagged gap, not silently worked around: sandbox_client.py's Sandbox ABC
-(Stack 1) currently only exposes `run_benchmark(commit_sha, ...)` against
-an *existing* commit — there is no "apply this arbitrary patch to a
-worktree, then benchmark it" method yet. That method (or an equivalent)
-needs to exist before a real `verify` callable can be built and threaded
-into run_fix_loop_live() from api.py's TODO(Stack 2) hookup. Until then,
-`verify` has to come from a test fake or a hand-rolled caller — this module
-deliberately does NOT invent that sandbox method itself, since it isn't
-this build's file to own (BUILD_02 §"What you own" lists only diagnoser.py/
-fixer.py/tavily_client.py).
+sandbox_client.py's Sandbox ABC now exposes
+`apply_patch_and_benchmark(commit_sha, patch, benchmark_command, n_runs)` —
+the "apply this arbitrary patch to a worktree, then benchmark it" method
+this docstring used to flag as missing (CODE_REVIEW_FINDINGS.md #10: that
+flag had gone stale, since the method existed and was fully tested but
+nothing said so here). `verify` is still an injected parameter on
+`run_fix_loop_live()` below, by design, not because the real
+implementation is missing: the live `verify` closure built on
+`apply_patch_and_benchmark()` lives in api.py's `_run_analysis()`, since
+building it needs the job's sandbox handle, benchmark command, and
+regression threshold — none of which this module owns or imports
+(BUILD_02 §"What you own" lists only diagnoser.py/fixer.py/
+tavily_client.py). Keeping `verify` as a plain injected callable here is
+also what makes `run_fix_loop`/`run_fix_loop_live` testable without a real
+sandbox at all.
 
 Calling convention for `diagnosis` (flagged, not pinned by either doc):
 AGENT_SPECS.md §3's input schema types `diagnosis` as literally "output of
@@ -214,8 +219,8 @@ def run_fix_loop(
 
 
 # ---------------------------------------------------------------------------
-# Layer B — real Nemotron wiring. `verify` is STILL injected — see the
-# flagged gap in the module docstring.
+# Layer B — real Nemotron wiring. `verify` is STILL injected, by design —
+# see the module docstring above for why.
 # ---------------------------------------------------------------------------
 
 def propose_patch(
@@ -267,9 +272,8 @@ def run_fix_loop_live(
 ) -> FixLoopResult:
     """The real thing: wires run_fix_loop's `propose` slot to real
     Nemotron calls via propose_patch(). `verify` is still the caller's to
-    supply — this is where api.py's TODO(Stack 2) hookup plugs in, once a
-    real sandbox-backed verify closure exists (see the flagged gap in the
-    module docstring)."""
+    supply — api.py's `_run_analysis()` builds the real sandbox-backed
+    verify closure and passes it in here, per the module docstring above."""
     log.info("fixer.start", job_id=job_id, max_attempts=max_attempts, before_score=before_score)
 
     def _propose(attempt_number: int, previous_attempt_result: PreviousAttemptResult | None) -> FixProposal:

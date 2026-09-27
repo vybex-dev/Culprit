@@ -190,10 +190,16 @@ def bisect(
 def list_commits_between(repo_path: str, start_sha: str, end_sha: str) -> list[str]:
     """Oldest -> newest, excluding start_sha, including end_sha — mirrors
     git's own `start..end` range convention."""
-    proc = subprocess.run(
-        ["git", "rev-list", "--reverse", f"{start_sha}..{end_sha}"],
-        cwd=repo_path, capture_output=True, text=True, timeout=30,
-    )
+    try:
+        proc = subprocess.run(
+            ["git", "rev-list", "--reverse", f"{start_sha}..{end_sha}"],
+            cwd=repo_path, capture_output=True, text=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired as e:
+        # Same pattern already proven correct in sandbox_client.py — see
+        # CODE_REVIEW_FINDINGS.md #7: this call was one of two places that
+        # hadn't been carried forward as a convention yet.
+        raise BisectionError(f"git rev-list timed out (30s) for {start_sha}..{end_sha}") from e
     if proc.returncode != 0:
         raise BisectionError(f"git rev-list failed for {start_sha}..{end_sha}: {proc.stderr}")
     commits = [c for c in proc.stdout.splitlines() if c.strip()]

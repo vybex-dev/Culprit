@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -48,6 +49,14 @@ import structlog
 log = structlog.get_logger("tavily_client")
 
 _TAVILY_API_URL = "https://api.tavily.com/search"
+
+# Same transient-vs-permanent retry convention as models.py's
+# call_nemotron (CODE_REVIEW_FINDINGS.md #20): a dropped connection or
+# transient 5xx/429 shouldn't throw away this grounding call's one search
+# result on the first blip. Kept shorter than models.py's, since this
+# whole step is optional enrichment that already degrades to [] — it's
+# not worth making a diagnosis wait long for it.
+_DEFAULT_TRANSIENT_RETRY_DELAYS_S: tuple[float, ...] = (0.5, 1.0)
 _DEFAULT_TIMEOUT_S = 15.0
 
 # Matches something call-shaped, e.g. "LineItem.objects.filter(" -> captures
@@ -92,6 +101,15 @@ def build_query(category: str, cited_lines: list[str]) -> str:
     return f"{category_readable} performance issue"
 
 
+def _is_retryable_transient_error(e: httpx.HTTPError) -> bool:
+    """Same rule as models.py's call_nemotron: retry connection-level
+    failures and 5xx/429; a 4xx (bad key, bad request) will never succeed
+    on retry."""
+    if isinstance(e, httpx.HTTPStatusError):
+        return e.response.status_code >= 500 or e.response.status_code == 429
+    return isinstance(e, httpx.RequestError)
+
+
 def search_grounding(
     category: str,
     cited_lines: list[str],
@@ -100,6 +118,7 @@ def search_grounding(
     api_key: str | None = None,
     client: httpx.Client | None = None,
     timeout_s: float = _DEFAULT_TIMEOUT_S,
+    retry_delays_s: tuple[float, ...] = _DEFAULT_TRANSIENT_RETRY_DELAYS_S,
 ) -> list[TavilyRef]:
     """Runs the grounding search for one Diagnoser result. Returns [] on
     ANY failure — missing key, network error, HTTP error, unexpected
@@ -111,6 +130,9 @@ def search_grounding(
     client: inject an httpx.Client (e.g. with a MockTransport) for testing;
     a real one is created and closed automatically otherwise — same
     convention as models.call_nemotron.
+    retry_delays_s: backoff before retrying a TRANSIENT failure (default
+    (0.5, 1.0)) — override with () in tests that need to force/observe one
+    without actually sleeping. See CODE_REVIEW_FINDINGS.md #20.
     """
     query = build_query(category, cited_lines)
 
@@ -123,19 +145,34 @@ def search_grounding(
     if owns_client:
         client = httpx.Client()
     try:
-        try:
-            resp = client.post(
-                _TAVILY_API_URL,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={"query": query, "max_results": max_results, "search_depth": "basic"},
-                timeout=timeout_s,
-            )
-            resp.raise_for_status()
-        except httpx.HTTPError as e:
-            log.warning("tavily.call_failed", query=query, error=str(e))
+        resp = None
+        last_error: httpx.HTTPError | None = None
+        for attempt_idx, delay_s in enumerate((0.0, *retry_delays_s)):
+            if delay_s:
+                log.warning(
+                    "tavily.transient_error_retry",
+                    query=query, error=str(last_error), retry_in_s=delay_s, attempt=attempt_idx + 1,
+                )
+                time.sleep(delay_s)
+            try:
+                resp = client.post(
+                    _TAVILY_API_URL,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={"query": query, "max_results": max_results, "search_depth": "basic"},
+                    timeout=timeout_s,
+                )
+                resp.raise_for_status()
+                break
+            except httpx.HTTPError as e:
+                last_error = e
+                resp = None
+                if not _is_retryable_transient_error(e):
+                    break
+        if resp is None:
+            log.warning("tavily.call_failed", query=query, error=str(last_error))
             return []
 
         try:
