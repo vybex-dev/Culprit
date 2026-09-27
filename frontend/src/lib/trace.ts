@@ -1,17 +1,15 @@
 // FILE: frontend/src/lib/trace.ts — place at this path in the Culprit repo
 //
-// Turns a JobState (or a sequence of JobStates observed over time) into a
-// timestamped log of discrete events: "sandbox started on commit X",
-// "commit X scored", "regression located", "diagnosis received", etc.
+// Turns a JobState into a timestamped log of discrete events: "sandbox
+// started on commit X", "commit X scored", "regression located",
+// "diagnosis received", etc.
 //
 // This is the data source for the live trace feed (TraceFeed.tsx) — the
-// thing that makes the dashboard feel like it's watching an agent work,
-// the way Antigravity/Stitch surface a visible activity log rather than a
-// silent spinner. Every event here is derived from a real field on
-// JobState; nothing is invented. Two jobs with identical state produce
-// identical traces. If the backend hasn't given us a piece of data yet,
-// there is no event for it yet — we don't simulate progress that hasn't
-// happened.
+// thing that makes the dashboard feel like it's watching an agent work.
+// Every event here is derived from a real field on JobState; nothing is
+// invented. Two jobs with identical state produce identical traces. If
+// the backend hasn't given us a piece of data yet, there is no event for
+// it yet — we don't simulate progress that hasn't happened.
 
 import type { Diagnosis, Fix, FixAttempt, JobState, TimelineEntry } from "./types";
 import { categoryLabel, formatPctChange, formatScore, shortSha } from "./format";

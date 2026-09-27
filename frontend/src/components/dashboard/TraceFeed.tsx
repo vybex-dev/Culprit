@@ -71,9 +71,9 @@ function Line({ event, isNew }: { event: TraceEvent; isNew: boolean }) {
  * first render for the job, everything already present shows immediately
  * (no fake replay of history); only events that arrive after mount stream.
  */
-function useStreamedEvents(events: TraceEvent[], live: boolean) {
-  const [shown, setShown] = useState<TraceEvent[]>(events);
-  const shownIdsRef = useRef<Set<string>>(new Set(events.map((e) => e.id)));
+function useStreamedEvents(events: TraceEvent[], live: boolean, startEmpty: boolean) {
+  const [shown, setShown] = useState<TraceEvent[]>(startEmpty ? [] : events);
+  const shownIdsRef = useRef<Set<string>>(new Set(startEmpty ? [] : events.map((e) => e.id)));
   const queueRef = useRef<TraceEvent[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reduceMotion = useReducedMotion();
@@ -116,14 +116,20 @@ function useStreamedEvents(events: TraceEvent[], live: boolean) {
 export function TraceFeed({
   events,
   live = true,
+  startEmpty = false,
   className,
 }: {
   events: TraceEvent[];
   /** false disables the type-in streaming (e.g. static state-reference view) */
   live?: boolean;
+  /** true always types every event in from scratch on mount, instead of
+   * showing already-known history immediately and only streaming what
+   * arrives after — use for a looping demo (landing page hero), not for
+   * a real job's first paint. */
+  startEmpty?: boolean;
   className?: string;
 }) {
-  const shown = useStreamedEvents(events, live);
+  const shown = useStreamedEvents(events, live, startEmpty);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

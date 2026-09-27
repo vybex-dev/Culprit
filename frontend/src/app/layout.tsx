@@ -32,7 +32,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               </span>
             </Link>
             <nav className="flex items-center gap-5 text-sm text-muted">
-              <Link href="/" className="hover:text-ink transition-colors">
+              <Link href="/new" className="hover:text-ink transition-colors">
                 New analysis
               </Link>
               <Link href="/dev/states" className="hover:text-ink transition-colors">
