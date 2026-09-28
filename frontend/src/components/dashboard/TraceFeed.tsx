@@ -79,17 +79,34 @@ function useStreamedEvents(events: TraceEvent[], live: boolean, startEmpty: bool
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reduceMotion = useReducedMotion();
 
+  // Append without ever repeating an id. React keys the feed by event id,
+  // so a repeat isn't just cosmetic — it renders the same line twice.
+  function commit(batch: TraceEvent[]) {
+    const fresh = batch.filter((e) => !shownIdsRef.current.has(e.id));
+    if (fresh.length === 0) return;
+    fresh.forEach((e) => shownIdsRef.current.add(e.id));
+    setShown((prev) => {
+      const have = new Set(prev.map((e) => e.id));
+      const add = fresh.filter((e) => !have.has(e.id));
+      return add.length === 0 ? prev : [...prev, ...add];
+    });
+  }
+
   useEffect(() => {
     const pending = events.filter((e) => !shownIdsRef.current.has(e.id));
     if (pending.length === 0) return;
 
     if (!live || reduceMotion) {
-      pending.forEach((e) => shownIdsRef.current.add(e.id));
-      setShown((prev) => [...prev, ...pending]);
+      commit(pending);
       return;
     }
 
-    queueRef.current.push(...pending);
+    // The queue is *derived*, not accumulated: `pending` is by definition
+    // every event not yet shown, in order — including anything an earlier
+    // run queued but never got to. Appending to the old queue instead would
+    // re-add those events (this effect re-runs on every poll, and twice on
+    // mount under Strict Mode) and stream each one out twice.
+    queueRef.current = pending;
 
     function pump() {
       const next = queueRef.current.shift();
@@ -97,12 +114,11 @@ function useStreamedEvents(events: TraceEvent[], live: boolean, startEmpty: bool
         timerRef.current = null;
         return;
       }
-      shownIdsRef.current.add(next.id);
-      setShown((prev) => [...prev, next]);
+      commit([next]);
       timerRef.current = setTimeout(pump, 130);
     }
 
-    if (!timerRef.current) pump();
+    pump();
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
