@@ -61,8 +61,9 @@ _MODEL_IDS: dict[ModelName, str] = {
     "ultra": os.environ.get("NEMOTRON_ULTRA_MODEL_ID", "nvidia/Nemotron-3-Ultra-550b-a55b"),
 }
 
-_DEFAULT_BASE_URL = os.environ.get("NEBIUS_API_BASE_URL", "https://api.tokenfactory.nebius.com/v1")
-
+#_DEFAULT_BASE_URL = os.environ.get("NEBIUS_API_BASE_URL", "https://api.tokenfactory.nebius.com/v1")
+_DEFAULT_BASE_URL = os.environ.get("NEBIUS_API_BASE_URL", "https://integrate.api.nvidia.com/v1")
+#https://integrate.api.nvidia.com/v1
 # Soft guidance only (AGENT_SPECS.md §0) — logged as a warning, never blocked,
 # since Ultra's valid range genuinely spans two different callers' needs.
 _TEMP_BOUNDS: dict[ModelName, tuple[float, float]] = {
@@ -164,10 +165,15 @@ def _call_once(
             time.sleep(delay_s)
         start = time.perf_counter()
         try:
+            body = {"model": model_id, "temperature": temperature, "messages": messages}
+            if model_id == _MODEL_IDS["nano"]:
+                # Nano = Bisector verdicts only; no reasoning trace (it ate the
+                # token budget and timed out).
+                body["chat_template_kwargs"] = {"enable_thinking": False}
             resp = client.post(
                 f"{base_url.rstrip('/')}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"},
-                json={"model": model_id, "temperature": temperature, "messages": messages},
+                json=body,
                 timeout=timeout_s,
             )
             resp.raise_for_status()
