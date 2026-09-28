@@ -21,15 +21,17 @@ export default function StatesPage() {
   return (
     <div className="flex flex-1 flex-col">
       <div className="sticky top-[57px] z-10 border-b border-line bg-paper/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-1.5 px-6 py-3">
-          <span className="mr-1 font-mono text-[11px] text-muted/70">State reference</span>
+        {/* One scrolling row on phones (a wrapped, sticky 5-row bar covered ~40% of the
+            screen); wraps normally from `sm` up. */}
+        <div className="mx-auto flex max-w-6xl items-center gap-1.5 overflow-x-auto px-4 py-3 sm:flex-wrap sm:px-6">
+          <span className="mr-1 shrink-0 whitespace-nowrap font-mono text-[11px] text-muted/70">State reference</span>
           {FIXTURES.map((fixture) => (
             <button
               key={fixture.key}
               type="button"
               onClick={() => setSelectedKey(fixture.key)}
               className={clsx(
-                "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                "shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
                 fixture.key === selectedKey ? "bg-iris text-paper" : "bg-ink/[0.05] text-muted hover:bg-ink/[0.09]",
               )}
             >

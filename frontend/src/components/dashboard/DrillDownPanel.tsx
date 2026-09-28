@@ -10,7 +10,7 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { IconButton } from "@/components/ui";
 
@@ -27,6 +27,59 @@ export function DrillDownPanel({
 }) {
   const isDesktop = useMediaQuery("(min-width: 640px)");
   const reduceMotion = useReducedMotion();
+  const panelRef = useRef<HTMLElement>(null);
+
+  // Parents pass an inline onClose that changes identity on every render
+  // (the dashboard re-renders on every poll). Keeping it in a ref means the
+  // effect below depends only on `open`, so a poll can never re-run it and
+  // yank focus or toggle the scroll lock mid-read.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
+  // A dialog that says aria-modal has to behave like one: Escape closes it,
+  // the page behind stops scrolling, Tab stays inside, and focus goes back
+  // to whatever opened it.
+  useEffect(() => {
+    if (!open) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    panel?.focus();
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab" || !panel) return;
+      const focusable = panel.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])');
+      if (focusable.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || active === panel)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      opener?.focus?.();
+    };
+  }, [open]);
 
   const offscreen = reduceMotion ? { opacity: 0 } : isDesktop ? { x: "100%" } : { y: "100%" };
   const onscreen = reduceMotion ? { opacity: 1 } : isDesktop ? { x: 0 } : { y: 0 };
@@ -45,10 +98,12 @@ export function DrillDownPanel({
             aria-hidden
           />
           <motion.aside
+            ref={panelRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-label={title}
-            className="fixed inset-x-0 bottom-0 z-40 flex max-h-[85vh] flex-col rounded-t-2xl border-t border-line bg-paper shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-[480px] sm:rounded-none sm:border-l sm:border-t-0"
+            className="focus:outline-none fixed inset-x-0 bottom-0 z-40 flex max-h-[85vh] flex-col rounded-t-2xl border-t border-line bg-paper shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-[480px] sm:rounded-none sm:border-l sm:border-t-0"
             initial={offscreen}
             animate={onscreen}
             exit={offscreen}

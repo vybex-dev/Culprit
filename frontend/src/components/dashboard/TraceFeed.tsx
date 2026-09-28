@@ -4,13 +4,24 @@
 // actually done so far, derived from real job state via lib/trace.ts.
 // New events stream in one at a time (typed, not pasted) as they appear —
 // this is the "watch the agent work" moment the rest of the dashboard
-// builds around, in the spirit of an agentic coding tool's visible
-// activity trace rather than a silent progress bar.
+// builds around.
 //
 // Streaming is purely a presentation delay on events that already
 // happened — nothing here invents an event before its underlying job
-// state exists. If two polls both bring 5 new lines, this feed still
-// only ever shows lines that correspond to real data.
+// state exists.
+//
+// Fixed size, scrolling body. The terminal has a constant height (header
+// + scrolling log + status bar) so it never pushes the page around as
+// lines arrive; overflow scrolls inside it. Scroll behavior follows the
+// established "smart follow" log-viewer pattern:
+//   - while you're at the bottom it follows the newest line;
+//   - scrolling up past DETACH_PX pauses following, so reading history
+//     is never yanked away from you (the threshold also tolerates the
+//     list growing by a line, which is what makes programmatic scrolling
+//     safe to tell apart from yours);
+//   - a "Jump to latest" button appears, with a count of lines that
+//     arrived while you were away;
+//   - getting back within REATTACH_PX of the bottom resumes following.
 
 "use client";
 
@@ -19,6 +30,15 @@ import clsx from "clsx";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { TraceEvent, TraceKind } from "@/lib/trace";
 import { LiveDot } from "@/components/ui";
+
+const DETACH_PX = 80;
+const REATTACH_PX = 24;
+
+type Filter = "all" | "milestones";
+const FILTERS: { value: Filter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "milestones", label: "Milestones" },
+];
 
 const KIND_GLYPH: Record<TraceKind, string> = {
   system: "›",
@@ -46,11 +66,11 @@ const KIND_COLOR: Record<TraceKind, string> = {
   error: "text-unresolved",
 };
 
-function Line({ event, isNew }: { event: TraceEvent; isNew: boolean }) {
+function Line({ event }: { event: TraceEvent }) {
   const reduceMotion = useReducedMotion();
   return (
     <motion.div
-      initial={isNew && !reduceMotion ? { opacity: 0, y: -4 } : false}
+      initial={reduceMotion ? false : { opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: "easeOut" }}
       className="flex items-baseline gap-2.5 py-[3px] leading-[1.5]"
@@ -133,54 +153,212 @@ function useStreamedEvents(events: TraceEvent[], live: boolean, startEmpty: bool
 export function TraceFeed({
   events,
   live = true,
+  outcome = "finished",
   startEmpty = false,
+  controls = true,
+  announce = true,
+  heightClassName = "h-80",
   className,
 }: {
   events: TraceEvent[];
   /** false disables the type-in streaming (e.g. static state-reference view) */
   live?: boolean;
+  /** How to label a feed that has stopped streaming. */
+  outcome?: "finished" | "stopped";
   /** true always types every event in from scratch on mount, instead of
    * showing already-known history immediately and only streaming what
    * arrives after — use for a looping demo (landing page hero), not for
    * a real job's first paint. */
   startEmpty?: boolean;
+  /** Show the filter and the status bar. Off for the decorative hero demo. */
+  controls?: boolean;
+  /** Announce new lines to screen readers. Off for the looping hero demo,
+   * which would otherwise read itself out forever. */
+  announce?: boolean;
+  /** Fixed height (a Tailwind class). It never grows with content. */
+  heightClassName?: string;
   className?: string;
 }) {
   const shown = useStreamedEvents(events, live, startEmpty);
+  const reduceMotion = useReducedMotion();
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Scroll events caused by our own smooth "jump" shouldn't be mistaken
+  // for the user scrolling away; ignore them briefly.
+  const ignoreScrollUntil = useRef(0);
 
-  useEffect(() => {
+  const [filter, setFilter] = useState<Filter>("all");
+  const [following, setFollowing] = useState(true);
+  const [canScrollUp, setCanScrollUp] = useState(false);
+  // How many visible lines existed when the user scrolled away — lets us
+  // show "N new" without an effect syncing state.
+  const [seenCount, setSeenCount] = useState(0);
+
+  const visible = filter === "all" ? shown : shown.filter((e) => e.kind !== "score");
+  const hidden = shown.length - visible.length;
+  const unseen = following ? 0 : Math.max(0, visible.length - seenCount);
+
+  function handleScroll() {
     const el = scrollRef.current;
     if (!el) return;
+    setCanScrollUp(el.scrollTop > 4);
+    if (performance.now() < ignoreScrollUntil.current) return;
+
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (following && distanceFromBottom > DETACH_PX) {
+      setFollowing(false);
+      setSeenCount(visible.length);
+    } else if (!following && distanceFromBottom <= REATTACH_PX) {
+      setFollowing(true);
+    }
+  }
+
+  // Follow the tail. Instant (not smooth) on purpose: each line already
+  // animates in, and chaining smooth scrolls at ~8 lines/second lags.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !following) return;
+    if (performance.now() < ignoreScrollUntil.current) return;
     el.scrollTop = el.scrollHeight;
-  }, [shown.length]);
+  }, [visible.length, following, filter]);
+
+  function jumpToLatest() {
+    const el = scrollRef.current;
+    if (!el) return;
+    ignoreScrollUntil.current = performance.now() + 600;
+    setFollowing(true);
+    el.scrollTo({ top: el.scrollHeight, behavior: reduceMotion ? "auto" : "smooth" });
+  }
+
+  function changeFilter(next: Filter) {
+    setFilter(next);
+    setFollowing(true);
+  }
 
   return (
     <div
       className={clsx(
-        "overflow-hidden rounded-xl border border-trace-line bg-trace-bg shadow-[0_1px_0_rgba(255,255,255,0.04)_inset] transition-shadow",
+        "flex flex-col overflow-hidden rounded-xl border border-trace-line bg-trace-bg shadow-[0_1px_0_rgba(255,255,255,0.04)_inset] transition-shadow",
+        heightClassName,
         live && "glow-butter",
         className,
       )}
     >
-      <div className="flex items-center gap-2 border-b border-trace-line bg-trace-bg-raised px-3.5 py-2">
+      <div className="flex shrink-0 items-center gap-2 border-b border-trace-line bg-trace-bg-raised px-3.5 py-2">
         <LiveDot variant="butter" live={live} />
         <span className="font-mono text-[11px] tracking-wide text-trace-muted">Agent activity</span>
-        {live && <span className="ml-auto font-mono text-[10px] text-trace-muted/70">watching…</span>}
-      </div>
-      <div ref={scrollRef} className="trace-scroll max-h-64 overflow-y-auto px-3.5 py-2.5 font-mono text-[12.5px]">
-        <AnimatePresence initial={false}>
-          {shown.map((event) => (
-            <Line key={event.id} event={event} isNew />
-          ))}
-        </AnimatePresence>
-        {live && (
-          <span
-            className="trace-caret ml-[22px] inline-block h-[13px] w-[7px] translate-y-[2px] bg-trace-accent"
-            aria-hidden
-          />
+        {controls ? (
+          <div
+            role="group"
+            aria-label="Filter activity"
+            className="ml-auto flex items-center gap-0.5 rounded-full border border-trace-line p-0.5"
+          >
+            {FILTERS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                aria-pressed={filter === f.value}
+                onClick={() => changeFilter(f.value)}
+                className={clsx(
+                  "rounded-full px-2 py-0.5 font-mono text-[10px] transition-colors",
+                  filter === f.value ? "bg-white/[0.14] text-trace-text" : "text-trace-muted hover:text-trace-text",
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          live && <span className="ml-auto font-mono text-[10px] text-trace-muted/70">watching…</span>
         )}
       </div>
+
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          role="log"
+          aria-live={announce ? "polite" : "off"}
+          aria-label="Agent activity"
+          tabIndex={0}
+          className="trace-scroll h-full overflow-y-auto overscroll-contain px-3.5 py-2.5 font-mono text-[12.5px]"
+        >
+          <AnimatePresence initial={false}>
+            {visible.map((event) => (
+              <Line key={event.id} event={event} />
+            ))}
+          </AnimatePresence>
+          {live && (
+            <span
+              className="trace-caret ml-[22px] inline-block h-[13px] w-[7px] translate-y-[2px] bg-trace-accent"
+              aria-hidden
+            />
+          )}
+        </div>
+
+        {/* Edge fades hint that there's more above / below. */}
+        <div
+          aria-hidden
+          className={clsx(
+            "pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-trace-bg to-transparent transition-opacity duration-200",
+            canScrollUp ? "opacity-100" : "opacity-0",
+          )}
+        />
+        <div
+          aria-hidden
+          className={clsx(
+            "pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-trace-bg to-transparent transition-opacity duration-200",
+            following ? "opacity-0" : "opacity-100",
+          )}
+        />
+
+        <div className="pointer-events-none absolute inset-x-0 bottom-2.5 flex justify-center">
+          <AnimatePresence>
+            {!following && (
+              <motion.button
+                type="button"
+                onClick={jumpToLatest}
+                initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+                className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-trace-line bg-trace-bg-raised px-3 py-1 font-mono text-[11px] text-trace-text shadow-lg transition-colors hover:bg-white/[0.12]"
+              >
+                <span aria-hidden>↓</span>
+                Jump to latest
+                {unseen > 0 && (
+                  <span className="rounded-full bg-trace-accent px-1.5 text-[10px] font-semibold text-[var(--cite-text)]">
+                    {unseen} new
+                  </span>
+                )}
+              </motion.button>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {controls && (
+        <div className="flex shrink-0 items-center justify-between border-t border-trace-line bg-trace-bg-raised px-3.5 py-1.5 font-mono text-[10px] text-trace-muted">
+          <span className="flex items-center gap-1.5">
+            {live ? (
+              <>
+                <LiveDot variant="butter" live />
+                streaming
+              </>
+            ) : (
+              <>
+                <span aria-hidden className={outcome === "stopped" ? "text-unresolved" : "text-trace-accent"}>
+                  {outcome === "stopped" ? "✕" : "✓"}
+                </span>
+                {outcome}
+              </>
+            )}
+          </span>
+          <span>
+            {visible.length} {visible.length === 1 ? "event" : "events"}
+            {hidden > 0 && ` (${hidden} hidden)`}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

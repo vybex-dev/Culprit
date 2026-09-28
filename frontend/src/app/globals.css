@@ -122,6 +122,9 @@
 html {
   scroll-padding-top: env(safe-area-inset-top, 0px);
   color-scheme: light dark;
+  /* Reserve the scrollbar's space so the page doesn't shift sideways when its
+     length changes or the drawer locks scrolling. */
+  scrollbar-gutter: stable;
 }
 
 body {

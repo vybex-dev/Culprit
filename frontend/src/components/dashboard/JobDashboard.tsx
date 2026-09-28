@@ -2,7 +2,8 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import type { JobState } from "@/lib/types";
 import { hasRegressionFound } from "@/lib/types";
 import { shortSha } from "@/lib/format";
@@ -21,6 +22,22 @@ import { ErrorBanner } from "./ErrorState";
 
 const TERMINAL_STATUSES = new Set<JobState["status"]>(["done", "failed"]);
 
+/** Staggered fade-up on first paint only (`initial` never re-applies on
+ * later polls), so the dashboard assembles top to bottom instead of
+ * popping in all at once. Skipped entirely for reduced-motion users. */
+function Enter({ order, children }: { order: number; children: ReactNode }) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <motion.div
+      initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.32, delay: reduceMotion ? 0 : order * 0.05, ease: "easeOut" }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 export function JobDashboard({ job, isReconnecting }: { job: JobState; isReconnecting?: boolean }) {
   const [panelRequestedOpen, setPanelRequestedOpen] = useState(false);
   const regressionFound = hasRegressionFound(job);
@@ -35,31 +52,49 @@ export function JobDashboard({ job, isReconnecting }: { job: JobState; isReconne
   const trace = useMemo(() => buildTrace(job), [job]);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-8">
-      <JobHeader job={job} isReconnecting={isReconnecting} />
-      <StatusRibbon job={job} />
+    <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
+      <Enter order={0}>
+        <JobHeader job={job} isReconnecting={isReconnecting} />
+      </Enter>
+      <Enter order={1}>
+        <StatusRibbon job={job} />
+      </Enter>
 
-      {job.status === "failed" && <ErrorBanner error={job.error} />}
-      <FinalResultBanner job={job} />
+      {job.status === "failed" && (
+        <Enter order={2}>
+          <ErrorBanner error={job.error} />
+        </Enter>
+      )}
+      {job.status === "done" && (
+        <Enter order={2}>
+          <FinalResultBanner job={job} />
+        </Enter>
+      )}
 
-      <MissionControl job={job} />
+      <Enter order={3}>
+        <MissionControl job={job} />
+      </Enter>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
-        <TimelineChart
-          timeline={job.timeline}
-          regressionCommit={job.regression_commit}
-          onSelectRegression={() => setPanelRequestedOpen(true)}
-          active={job.status === "bisecting"}
-        />
-        <TraceFeed events={trace} live={isLive} className="lg:sticky lg:top-[76px]" />
-      </div>
+      <Enter order={4}>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+          <TimelineChart
+            timeline={job.timeline}
+            regressionCommit={job.regression_commit}
+            onSelectRegression={() => setPanelRequestedOpen(true)}
+            active={job.status === "bisecting"}
+          />
+          <TraceFeed events={trace} live={isLive} outcome={job.status === "failed" ? "stopped" : "finished"} />
+        </div>
+      </Enter>
 
       {regressionFound && job.regression_commit && (
-        <RegressionCallout
-          timeline={job.timeline}
-          regressionCommit={job.regression_commit}
-          onOpen={() => setPanelRequestedOpen(true)}
-        />
+        <Enter order={5}>
+          <RegressionCallout
+            timeline={job.timeline}
+            regressionCommit={job.regression_commit}
+            onOpen={() => setPanelRequestedOpen(true)}
+          />
+        </Enter>
       )}
 
       <DrillDownPanel

@@ -4,6 +4,7 @@
 
 import { useJobPolling } from "@/lib/useJobPolling";
 import { JobDashboard } from "@/components/dashboard/JobDashboard";
+import { DashboardSkeleton } from "@/components/dashboard/DashboardSkeleton";
 import { LiveDot } from "@/components/ui";
 
 export function JobPageClient({ jobId }: { jobId: string }) {
@@ -19,14 +20,7 @@ export function JobPageClient({ jobId }: { jobId: string }) {
     );
   }
 
-  if (!job) {
-    return (
-      <div className="mx-auto flex w-full max-w-xl flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">
-        <LiveDot variant="iris" live size="md" />
-        <p className="text-sm text-muted">Loading job…</p>
-      </div>
-    );
-  }
+  if (!job) return <DashboardSkeleton />;
 
   return <JobDashboard job={job} isReconnecting={isReconnecting} />;
 }

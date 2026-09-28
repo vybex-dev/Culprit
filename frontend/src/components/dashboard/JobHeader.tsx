@@ -2,7 +2,8 @@
 
 import type { JobState } from "@/lib/types";
 import { formatElapsed, repoDisplayName, shortSha, truncateMiddle } from "@/lib/format";
-import { LiveDot, MetaTag, Pill } from "@/components/ui";
+import { LiveDot, Pill } from "@/components/ui";
+import { CopyMetaTag } from "@/components/CopyMetaTag";
 
 const STATUS_VARIANT: Record<JobState["status"], "neutral" | "iris" | "butter" | "resolved" | "unresolved"> = {
   queued: "neutral",
@@ -38,17 +39,17 @@ export function JobHeader({
           <h1 className="truncate text-xl font-medium tracking-tight text-ink">{repoDisplayName(job.repo_url)}</h1>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <MetaTag title={job.benchmark_command} className="max-w-[36ch]">
+          <CopyMetaTag copyText={job.benchmark_command} className="max-w-[36ch]">
             {job.benchmark_command}
-          </MetaTag>
+          </CopyMetaTag>
           {job.commit_range && (
-            <MetaTag label="range">
+            <CopyMetaTag label="range" copyText={`${job.commit_range[0]}..${job.commit_range[1]}`}>
               {shortSha(job.commit_range[0])}…{shortSha(job.commit_range[1])}
-            </MetaTag>
+            </CopyMetaTag>
           )}
-          <MetaTag label="job" title={job.job_id}>
+          <CopyMetaTag label="job" copyText={job.job_id}>
             {truncateMiddle(job.job_id, 20)}
-          </MetaTag>
+          </CopyMetaTag>
         </div>
       </div>
 

@@ -149,7 +149,16 @@ export default function LandingPage() {
             {/* The cursor's percentages are measured against this wrapper, so it
                 holds only the trace card — not the caption below it. */}
             <div className="relative">
-              <TraceFeed key={cycle} events={HERO_TRACE} live startEmpty className="shadow-lg" />
+              <TraceFeed
+                key={cycle}
+                events={HERO_TRACE}
+                live
+                startEmpty
+                controls={false}
+                announce={false}
+                heightClassName="h-64"
+                className="shadow-lg"
+              />
               <AgentCursor waypoint={cursorWaypoint} />
             </div>
             <p className="mt-3 text-center text-xs text-muted">

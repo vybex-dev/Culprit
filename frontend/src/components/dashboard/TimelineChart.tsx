@@ -70,7 +70,7 @@ function makeDot(onSelectRegression: () => void) {
 
 function EmptyChart({ active }: { active: boolean }) {
   return (
-    <div className="flex h-72 flex-col items-center justify-center gap-2.5 rounded-md border border-dashed border-line-strong text-center">
+    <div className="flex h-80 flex-col items-center justify-center gap-2.5 rounded-md border border-dashed border-line-strong text-center">
       <span className="relative flex h-2 w-2" aria-hidden>
         {active && <span className="breathe-ring absolute inset-0 rounded-full bg-iris" />}
         <span className="relative h-2 w-2 rounded-full bg-iris" />
@@ -111,7 +111,7 @@ export function TimelineChart({
   }));
 
   return (
-    <div className="relative h-72 w-full rounded-xl border border-line bg-surface p-2">
+    <div className="relative h-80 w-full rounded-xl border border-line bg-surface p-2">
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} margin={{ top: 16, right: 12, bottom: 4, left: 0 }}>
           <defs>
