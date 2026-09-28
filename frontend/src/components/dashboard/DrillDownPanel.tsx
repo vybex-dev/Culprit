@@ -36,7 +36,7 @@ export function DrillDownPanel({
       {open && (
         <>
           <motion.div
-            className="fixed inset-0 z-30 bg-ink/30"
+            className="fixed inset-0 z-30 bg-scrim backdrop-blur-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -48,7 +48,7 @@ export function DrillDownPanel({
             role="dialog"
             aria-modal="true"
             aria-label={title}
-            className="fixed inset-x-0 bottom-0 z-40 flex max-h-[85vh] flex-col rounded-t-xl border-t border-line bg-paper shadow-xl sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-[480px] sm:rounded-none sm:border-l sm:border-t-0"
+            className="fixed inset-x-0 bottom-0 z-40 flex max-h-[85vh] flex-col rounded-t-2xl border-t border-line bg-paper shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-[480px] sm:rounded-none sm:border-l sm:border-t-0"
             initial={offscreen}
             animate={onscreen}
             exit={offscreen}

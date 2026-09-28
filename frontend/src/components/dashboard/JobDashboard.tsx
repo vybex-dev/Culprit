@@ -1,4 +1,4 @@
-// FILE: frontend/src/components/dashboard/JobDashboard.tsx — place at this path in the Culprit repo
+// FILE: frontend/src/components/dashboard/JobDashboard.tsx
 
 "use client";
 
@@ -9,6 +9,7 @@ import { shortSha } from "@/lib/format";
 import { buildTrace } from "@/lib/trace";
 import { JobHeader } from "./JobHeader";
 import { StatusRibbon } from "./StatusRibbon";
+import { MissionControl } from "./MissionControl";
 import { TimelineChart } from "./TimelineChart";
 import { RegressionCallout } from "./RegressionCallout";
 import { DrillDownPanel } from "./DrillDownPanel";
@@ -34,14 +35,16 @@ export function JobDashboard({ job, isReconnecting }: { job: JobState; isReconne
   const trace = useMemo(() => buildTrace(job), [job]);
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-8">
+    <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-8">
       <JobHeader job={job} isReconnecting={isReconnecting} />
       <StatusRibbon job={job} />
 
       {job.status === "failed" && <ErrorBanner error={job.error} />}
       <FinalResultBanner job={job} />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+      <MissionControl job={job} />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <TimelineChart
           timeline={job.timeline}
           regressionCommit={job.regression_commit}

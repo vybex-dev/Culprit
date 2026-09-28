@@ -119,13 +119,43 @@ function finalLines(job: JobState, fix: Fix | null): TraceEvent[] {
       },
     ];
   }
+  // Same four-way honesty as FinalResultBanner (CODE_REVIEW_FINDINGS.md
+  // #4): "diagnosis complete … attempt cap reached" is only true when a
+  // diagnosis exists AND fixes were actually attempted. Claiming it for a
+  // clean range or an undiagnosed job would invent a diagnosis that was
+  // never produced — and the Mission Control cursor echoes this text.
+  if (job.regression_commit === null) {
+    return [
+      {
+        id: "final-no-regression",
+        seq: 9000,
+        kind: "done",
+        text: "no regression found",
+        detail: "every commit in range stayed within threshold of the baseline",
+      },
+    ];
+  }
+  if (!job.diagnosis) {
+    return [
+      {
+        id: "final-undiagnosed",
+        seq: 9000,
+        kind: "done",
+        text: "regression located — no diagnosis attached",
+        detail: "the guilty commit was found, but no root cause was recorded",
+      },
+    ];
+  }
   return [
     {
       id: "final-unresolved",
       seq: 9000,
       kind: "done",
       text: "diagnosis complete — no verified fix",
-      detail: "attempt cap reached; root cause reported as-is",
+      detail:
+        job.fix_attempts.length > 0
+          ? "attempt cap reached; root cause reported as-is"
+          : "no fix was attempted; root cause reported as-is",
     },
   ];
 }

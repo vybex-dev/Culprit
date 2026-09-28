@@ -1,4 +1,4 @@
-// FILE: frontend/src/components/dashboard/DiagnosisSection.tsx — place at this path in the Culprit repo
+// FILE: frontend/src/components/dashboard/DiagnosisSection.tsx
 
 import { motion, useReducedMotion } from "motion/react";
 import type { Diagnosis } from "@/lib/types";
@@ -11,7 +11,7 @@ export function DiagnosisSectionLoading() {
     <div className="space-y-3">
       <SectionLabel>Diagnosis</SectionLabel>
       <div className="flex items-center gap-2 text-xs text-muted">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-iris" aria-hidden />
+        <span className="breathe-dot h-1.5 w-1.5 rounded-full bg-iris" aria-hidden />
         Nemotron 3 Ultra is analyzing the guilty diff…
       </div>
       <Skeleton className="h-5 w-40" />
@@ -23,11 +23,10 @@ export function DiagnosisSectionLoading() {
 }
 
 /** One orchestrated reveal, staggered top to bottom, the moment the
- * diagnosis first arrives — the panel's single deliberate motion moment
- * (frontend-design skill: one orchestrated sequence, not scattered
- * per-element fades). Subsequent re-renders of the same diagnosis don't
- * replay it (key'd by category+explanation upstream via React reconciling
- * the same elements), and reduced-motion users see it appear instantly. */
+ * diagnosis first arrives — the panel's single deliberate motion moment.
+ * Subsequent re-renders of the same diagnosis don't replay it (key'd by
+ * category+explanation upstream via React reconciling the same
+ * elements), and reduced-motion users see it appear instantly. */
 function Reveal({ index, children }: { index: number; children: React.ReactNode }) {
   const reduceMotion = useReducedMotion();
   return (
@@ -69,7 +68,7 @@ export function DiagnosisSection({ diagnosis }: { diagnosis: Diagnosis }) {
               <p className="mb-1.5 text-xs text-muted">
                 Cited lines (full diff not available from the API for this job — see hand-back notes):
               </p>
-              <div className="space-y-1 rounded-md bg-[var(--console-bg)] p-3 font-mono text-[12.5px]">
+              <div className="space-y-1 rounded-xl bg-[var(--console-bg)] p-3 font-mono text-[12.5px]">
                 {diagnosis.cited_lines.map((line, i) => (
                   <div key={i} className="rounded bg-[var(--cite-bg)] px-2 py-0.5 text-[var(--cite-text)]">
                     {line}

@@ -1,4 +1,4 @@
-// FILE: frontend/src/components/dashboard/RegressionCallout.tsx — place at this path in the Culprit repo
+// FILE: frontend/src/components/dashboard/RegressionCallout.tsx
 
 import type { TimelineEntry } from "@/lib/types";
 import { formatPctChange, formatScore, shortSha } from "@/lib/format";
@@ -26,7 +26,7 @@ export function RegressionCallout({
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center justify-between gap-3 rounded-md border-l-4 border-butter-700 bg-butter/20 px-4 py-3 text-left transition-colors hover:bg-butter/30"
+      className="glow-butter flex w-full items-center justify-between gap-3 rounded-xl border border-transparent bg-butter/[0.14] px-4 py-3 text-left transition-colors hover:bg-butter/[0.22]"
     >
       <span className="text-sm text-ink">
         Regression found at <span className="font-mono">{shortSha(regressed.commit)}</span>

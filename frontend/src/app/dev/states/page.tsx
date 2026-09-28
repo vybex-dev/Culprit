@@ -1,4 +1,4 @@
-// FILE: frontend/src/app/dev/states/page.tsx — place at this path in the Culprit repo
+// FILE: frontend/src/app/dev/states/page.tsx
 //
 // Not a hidden debug route — this is the practical answer to BUILD_03's
 // "build your first pass against a static fixture file" instruction, kept
@@ -20,8 +20,9 @@ export default function StatesPage() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <div className="border-b border-line bg-surface">
-        <div className="mx-auto flex max-w-5xl flex-wrap gap-1.5 px-6 py-3">
+      <div className="sticky top-[57px] z-10 border-b border-line bg-paper/95 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-1.5 px-6 py-3">
+          <span className="mr-1 font-mono text-[11px] text-muted/70">State reference</span>
           {FIXTURES.map((fixture) => (
             <button
               key={fixture.key}
@@ -37,7 +38,7 @@ export default function StatesPage() {
           ))}
         </div>
       </div>
-      <p className="mx-auto mt-4 max-w-5xl px-6 text-xs text-muted">{selected.description}</p>
+      <p className="mx-auto mt-4 max-w-6xl px-6 text-xs text-muted">{selected.description}</p>
       <JobDashboard key={selected.key} job={selected.job} />
     </div>
   );

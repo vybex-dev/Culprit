@@ -1,13 +1,14 @@
-// FILE: frontend/src/components/dashboard/DiffViewer.tsx — place at this path in the Culprit repo
+// FILE: frontend/src/components/dashboard/DiffViewer.tsx
 
+"use client";
+
+import { useState } from "react";
 import clsx from "clsx";
 import { isCitedLine, parseUnifiedDiff, type DiffLine } from "@/lib/diff";
 
 function LineRow({ line, cited }: { line: DiffLine; cited: boolean }) {
   if (line.kind === "hunk") {
-    return (
-      <div className="px-3 py-1 text-[var(--console-muted)] select-none">{line.content || "@@"}</div>
-    );
+    return <div className="px-3 py-1 text-[var(--console-muted)] select-none">{line.content || "@@"}</div>;
   }
   if (line.kind === "meta") {
     return <div className="px-3 py-0.5 text-[var(--console-muted)]">{line.content}</div>;
@@ -33,6 +34,31 @@ function LineRow({ line, cited }: { line: DiffLine; cited: boolean }) {
   );
 }
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch {
+      // Clipboard access can be denied by the browser — fail silently,
+      // this is a convenience affordance, not a required action.
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="rounded px-1.5 py-0.5 font-mono text-[10px] text-[var(--console-muted)] transition-colors hover:bg-white/10 hover:text-[var(--console-text)]"
+    >
+      {copied ? "copied" : "copy"}
+    </button>
+  );
+}
+
 export function DiffViewer({
   diff,
   citedLines = [],
@@ -46,22 +72,30 @@ export function DiffViewer({
 
   if (hunks.length === 0) {
     return (
-      <pre className={clsx("rounded-md bg-[var(--console-bg)] p-3 font-mono text-xs text-[var(--console-muted)]", className)}>
+      <pre className={clsx("rounded-xl bg-[var(--console-bg)] p-3 font-mono text-xs text-[var(--console-muted)]", className)}>
         (empty diff)
       </pre>
     );
   }
 
   return (
-    <div className={clsx("overflow-x-auto rounded-md bg-[var(--console-bg)] font-mono text-[12.5px]", className)}>
-      {hunks.map((hunk, hunkIndex) => (
-        <div key={hunkIndex} className={hunkIndex > 0 ? "mt-2 border-t border-white/10 pt-2" : ""}>
-          {hunk.header && <LineRow line={{ kind: "hunk", content: hunk.header, oldLineNo: null, newLineNo: null }} cited={false} />}
-          {hunk.lines.map((line, lineIndex) => (
-            <LineRow key={lineIndex} line={line} cited={isCitedLine(line, citedLines)} />
-          ))}
-        </div>
-      ))}
+    <div className={clsx("overflow-hidden rounded-xl bg-[var(--console-bg)] font-mono text-[12.5px]", className)}>
+      <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-1.5">
+        <span className="font-mono text-[10px] uppercase tracking-wide text-[var(--console-muted)]">Diff</span>
+        <CopyButton text={diff} />
+      </div>
+      <div className="overflow-x-auto py-1.5">
+        {hunks.map((hunk, hunkIndex) => (
+          <div key={hunkIndex} className={hunkIndex > 0 ? "mt-2 border-t border-white/10 pt-2" : ""}>
+            {hunk.header && (
+              <LineRow line={{ kind: "hunk", content: hunk.header, oldLineNo: null, newLineNo: null }} cited={false} />
+            )}
+            {hunk.lines.map((line, lineIndex) => (
+              <LineRow key={lineIndex} line={line} cited={isCitedLine(line, citedLines)} />
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

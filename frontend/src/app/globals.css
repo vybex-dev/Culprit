@@ -3,64 +3,89 @@
 @import "@fontsource-variable/jetbrains-mono";
 
 /*
- * Color system per docs/build-prompts/BUILD_03_FRONTEND_DASHBOARD.md.
- * --butter and --iris are given brand colors; everything else here is a
- * derived addition (documented in that file) needed to carry a full
- * dashboard UI. This is a single, deliberate light theme, not a light/dark
- * pair — the brief's palette (paper background, ink text) IS the theme,
- * so no prefers-color-scheme swap is implemented. See the hand-back notes
- * for this flagged as a decision, not an oversight.
+ * Color system — light + dark themes sharing one vocabulary.
+ *
+ * Four accents carry meaning everywhere in this app, not just once:
+ *   iris    — the agent's own reasoning (model calls, primary actions)
+ *   butter  — something is live/running right now (pulses, the cursor)
+ *   resolved   — verified success (a sandbox re-run actually proved it)
+ *   unresolved — regression / failure
+ * Learn the vocabulary once in the mission control panel and you can
+ * read every other screen without a legend.
+ *
+ * Light and dark are genuinely different tunings of the same tokens
+ * (not an inverted filter) — see the per-theme blocks below. The
+ * console/trace surfaces (diffs, the live log) stay a fixed near-black
+ * regardless of page theme, same as before: that surface reads as
+ * "this product's own terminal," not a themed panel.
  */
 :root {
-  /* given */
-  --butter: #fff275;
-  --iris: #3a0ca3;
+  color-scheme: light;
 
-  /* derived neutrals (BUILD_03) */
-  --ink: #1a1523;
   --paper: #fffdf7;
-  --iris-100: #ede4fb;
-  --iris-700: #2a0878;
-  --butter-700: #e6d948;
-
-  /* semantic (BUILD_03) — used sparingly, badges only */
-  --resolved: #2d9a5b;
-  --unresolved: #e1483d;
-
-  /* additional derived tokens (not in BUILD_03) needed to finish a real
-     UI: hairline rules, muted text, panel surface, and a dark "console"
-     surface for diffs/code, which conventionally read as terminal-like
-     regardless of the surrounding theme. */
-  --line: rgba(26, 21, 35, 0.12);
-  --line-strong: rgba(26, 21, 35, 0.22);
-  --muted: rgba(26, 21, 35, 0.6);
   --surface: #ffffff;
+  --surface-2: #fbf8f1;
+  --ink: #14101c;
+  --muted: rgba(20, 16, 28, 0.62);
+  --line: rgba(20, 16, 28, 0.12);
+  --line-strong: rgba(20, 16, 28, 0.24);
+  --scrim: rgba(10, 8, 18, 0.42);
 
-  --console-bg: #150f1e;
-  --console-text: rgba(255, 255, 255, 0.88);
+  --iris: #4b15c7;
+  --iris-700: #2a0878;
+  --iris-100: #ede4fb;
+
+  --butter: #ffe24d;
+  --butter-700: #b88a00;
+
+  --resolved: #068f73;
+  --unresolved: #d93a3a;
+
+  /* Always-dark console/trace surface — theme-invariant on purpose. */
+  --console-bg: #120c1f;
+  --console-text: rgba(255, 255, 255, 0.9);
   --console-muted: rgba(255, 255, 255, 0.5);
-  --diff-add-bg: rgba(45, 154, 91, 0.18);
-  --diff-add-text: #8fe3ae;
-  --diff-del-bg: rgba(225, 72, 61, 0.18);
-  --diff-del-text: #ffafa6;
+  --diff-add-bg: rgba(47, 232, 192, 0.16);
+  --diff-add-text: #7cf0d6;
+  --diff-del-bg: rgba(255, 107, 107, 0.18);
+  --diff-del-text: #ffb4b4;
   --cite-bg: var(--butter);
-  --cite-text: var(--ink);
+  --cite-text: #14101c; /* fixed — this sits on a bright-yellow chip regardless of page theme */
 
-  /* Trace/console surface — an iris-tinted near-black rather than a
-     generic dark grey, so the "live agent" surface reads as this
-     product's own console, not a bolted-on terminal theme. Used by
-     TraceFeed and anywhere else that shows the pipeline "thinking". */
-  --trace-bg: #120a24;
-  --trace-bg-raised: #1a1035;
+  --trace-bg: #0f0a1c;
+  --trace-bg-raised: #1b1130;
   --trace-line: rgba(255, 255, 255, 0.08);
-  --trace-text: rgba(255, 255, 255, 0.92);
-  --trace-muted: rgba(200, 190, 230, 0.55);
-  --trace-accent: var(--butter);
-  --trace-accent-dim: rgba(255, 242, 117, 0.6);
-  --trace-iris: #8f7bd6;
+  --trace-text: rgba(255, 255, 255, 0.94);
+  --trace-muted: rgba(210, 198, 240, 0.55);
+  --trace-accent: #ffe24d;
+  --trace-accent-dim: rgba(255, 226, 77, 0.6);
+  --trace-iris: #a78bfa;
 
   --font-ui: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --font-data: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --paper: #0b0812;
+  --surface: #150f20;
+  --surface-2: #1c1430;
+  --ink: #f3eeff;
+  --muted: rgba(243, 238, 255, 0.64);
+  --line: rgba(243, 238, 255, 0.12);
+  --line-strong: rgba(243, 238, 255, 0.22);
+  --scrim: rgba(4, 3, 8, 0.6);
+
+  --iris: #a78bfa;
+  --iris-700: #d9ccff;
+  --iris-100: rgba(167, 139, 250, 0.16);
+
+  --butter: #ffe24d;
+  --butter-700: #ffd24d;
+
+  --resolved: #2fe8c0;
+  --unresolved: #ff6b6b;
 }
 
 @theme inline {
@@ -74,8 +99,11 @@
   --color-resolved: var(--resolved);
   --color-unresolved: var(--unresolved);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-muted: var(--muted);
+  --color-scrim: var(--scrim);
   --color-trace-bg: var(--trace-bg);
   --color-trace-bg-raised: var(--trace-bg-raised);
   --color-trace-line: var(--trace-line);
@@ -93,12 +121,14 @@
 
 html {
   scroll-padding-top: env(safe-area-inset-top, 0px);
+  color-scheme: light dark;
 }
 
 body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font-ui);
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 :focus-visible {
@@ -118,9 +148,12 @@ body {
   }
 }
 
-/* Trace feed cursor blink — deliberately not `animate-pulse` (opacity
-   fade); a hard-cut blink reads as "live terminal", a fade reads as
-   "loading skeleton". Two different signals. */
+/* ---------------------------------------------------------------------
+ * Motion primitives — every one of these is triggered by a real state
+ * change somewhere (a job going live, a value updating), never a decor-
+ * only loop with no referent. See AgentCursor / MissionControl / TraceFeed.
+ * ------------------------------------------------------------------- */
+
 @keyframes trace-caret {
   0%,
   49% {
@@ -134,15 +167,149 @@ body {
 .trace-caret {
   animation: trace-caret 1s step-end infinite;
 }
-@media (prefers-reduced-motion: reduce) {
-  .trace-caret {
-    animation: none;
+
+/* A hard, deliberate breathing pulse for "this is live right now"
+ * indicators — distinct from Tailwind's animate-pulse (which reads as
+ * "loading skeleton", not "alive"). */
+@keyframes breathe-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+.breathe-ring {
+  animation: breathe-ring 1.6s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+}
+
+@keyframes breathe-dot {
+  0%,
+  100% {
     opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+.breathe-dot {
+  animation: breathe-dot 1.8s ease-in-out infinite;
+}
+
+/* Slow ambient drift for the mission-control aurora backdrop. Extremely
+ * subtle — meant to be felt, not noticed. */
+@keyframes aurora-drift {
+  0% {
+    transform: translate3d(-4%, -2%, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(3%, 2%, 0) scale(1.08);
+  }
+  100% {
+    transform: translate3d(-4%, -2%, 0) scale(1);
+  }
+}
+.aurora-drift {
+  animation: aurora-drift 18s ease-in-out infinite;
+}
+
+/* Tiny idle float for the agent cursor when it's parked, not traveling —
+ * keeps it reading as "present" rather than "frozen". */
+@keyframes cursor-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+.cursor-bob {
+  animation: cursor-bob 2.4s ease-in-out infinite;
+}
+
+/* Landing ripple where the agent cursor "clicks". */
+@keyframes cursor-ripple {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+.cursor-ripple {
+  animation: cursor-ripple 0.7s ease-out;
+}
+
+/* Shimmer loading state — replaces flat animate-pulse skeletons. */
+@keyframes shimmer-sweep {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.shimmer {
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, var(--ink) 8%, transparent) 45%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-sweep 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trace-caret,
+  .breathe-ring,
+  .breathe-dot,
+  .aurora-drift,
+  .cursor-bob,
+  .shimmer {
+    animation: none !important;
   }
 }
 
-/* Thin scrollbar for the trace feed's own scroll region only — the rest
-   of the app keeps the OS default. */
+/* Thematic glows — box-shadow computed from the live token, so they
+ * repaint correctly the instant the theme flips. */
+.glow-iris {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--iris) 38%, transparent),
+    0 10px 32px -10px color-mix(in srgb, var(--iris) 55%, transparent);
+}
+.glow-butter {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--butter) 55%, transparent),
+    0 10px 32px -10px color-mix(in srgb, var(--butter) 45%, transparent);
+}
+.glow-resolved {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--resolved) 45%, transparent),
+    0 10px 32px -10px color-mix(in srgb, var(--resolved) 50%, transparent);
+}
+.glow-unresolved {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--unresolved) 45%, transparent),
+    0 10px 32px -10px color-mix(in srgb, var(--unresolved) 45%, transparent);
+}
+
+/* Faint technical grid texture for mission-control / console-adjacent
+ * panels. Auto-adapts: dark hairlines on light theme, light hairlines
+ * on dark theme, because it reads off --ink. */
+.mc-grid {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--ink) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--ink) 5%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Thin scrollbar for scrollable log/console regions. */
 .trace-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--trace-line) transparent;

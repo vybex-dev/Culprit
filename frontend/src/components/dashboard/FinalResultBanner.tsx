@@ -1,4 +1,4 @@
-// FILE: frontend/src/components/dashboard/FinalResultBanner.tsx — place at this path in the Culprit repo
+// FILE: frontend/src/components/dashboard/FinalResultBanner.tsx
 
 import clsx from "clsx";
 import type { JobState } from "@/lib/types";
@@ -22,10 +22,10 @@ function variantFor(job: JobState): BannerVariant {
 }
 
 const VARIANT_STYLES: Record<BannerVariant, string> = {
-  resolved: "border-resolved bg-resolved/[0.06] text-ink",
-  diagnosedNotFixed: "border-butter-700 bg-butter-700/[0.12] text-ink",
-  noRegressionFound: "border-resolved bg-resolved/[0.06] text-ink",
-  regressionNotDiagnosed: "border-line-strong bg-paper text-ink",
+  resolved: "border-resolved bg-resolved/[0.08] text-ink glow-resolved border-transparent",
+  diagnosedNotFixed: "border-butter-700 bg-butter-700/[0.1] text-ink",
+  noRegressionFound: "border-resolved bg-resolved/[0.08] text-ink",
+  regressionNotDiagnosed: "border-line-strong bg-surface text-ink",
 };
 
 export function FinalResultBanner({ job }: { job: JobState }) {
@@ -34,12 +34,7 @@ export function FinalResultBanner({ job }: { job: JobState }) {
   const variant = variantFor(job);
 
   return (
-    <div
-      className={clsx(
-        "flex flex-wrap items-center gap-2 rounded-md border-l-4 px-4 py-3 text-sm",
-        VARIANT_STYLES[variant],
-      )}
-    >
+    <div className={clsx("flex flex-wrap items-center gap-2 rounded-xl border-l-4 px-4 py-3 text-sm", VARIANT_STYLES[variant])}>
       {variant === "resolved" && job.fix ? (
         <span>
           <strong className="font-medium">Fix verified.</strong> Benchmark recovered from{" "}

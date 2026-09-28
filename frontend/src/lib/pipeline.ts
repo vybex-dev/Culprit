@@ -31,3 +31,53 @@ export function reachedStageIndex(job: JobState): number {
   if (job.timeline.length > 0) return PIPELINE_STAGES.indexOf("bisecting");
   return PIPELINE_STAGES.indexOf("queued");
 }
+
+/**
+ * The three worker lanes shown side by side in Mission Control. These
+ * are a subset of PIPELINE_STAGES (queued/done aren't "workers") — kept
+ * as a separate type rather than reusing PipelineStage so a lane can
+ * never accidentally be asked for "queued" or "done" status.
+ */
+export const PIPELINE_LANES = ["bisect", "diagnose", "fix"] as const;
+export type PipelineLane = (typeof PIPELINE_LANES)[number];
+
+export const LANE_LABEL: Record<PipelineLane, string> = {
+  bisect: "Bisect",
+  diagnose: "Diagnose",
+  fix: "Fix",
+};
+
+export type LaneStatus = "idle" | "running" | "done" | "failed";
+
+const LANE_STAGE_INDEX: Record<PipelineLane, number> = {
+  bisect: PIPELINE_STAGES.indexOf("bisecting"),
+  diagnose: PIPELINE_STAGES.indexOf("diagnosing"),
+  fix: PIPELINE_STAGES.indexOf("fixing"),
+};
+
+/**
+ * Status of one lane, derived purely from real JobState fields — same
+ * "infer the furthest real stage, never invent one" discipline as
+ * reachedStageIndex above (AGENTS.md rule 1: never fabricate what
+ * happened). A lane is never marked "running" or "done" from anything
+ * but the job's own recorded progress.
+ */
+export function laneStatus(job: JobState, lane: PipelineLane): LaneStatus {
+  const reached = reachedStageIndex(job);
+  const laneIndex = LANE_STAGE_INDEX[lane];
+
+  if (job.status === "failed") {
+    if (reached === laneIndex) return "failed";
+    if (reached < laneIndex) {
+      // A failure recorded before any lane-specific data exists (e.g. the
+      // first sandbox never came up) has nowhere else to attach — it
+      // belongs to the first lane, not to three lanes that all look idle.
+      return reached === 0 && lane === "bisect" ? "failed" : "idle";
+    }
+    return "done";
+  }
+
+  if (reached < laneIndex) return "idle";
+  if (reached > laneIndex) return "done";
+  return job.status === "done" ? "done" : "running";
+}

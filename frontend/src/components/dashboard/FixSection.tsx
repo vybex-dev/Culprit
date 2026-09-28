@@ -1,25 +1,25 @@
-// FILE: frontend/src/components/dashboard/FixSection.tsx — place at this path in the Culprit repo
+// FILE: frontend/src/components/dashboard/FixSection.tsx
 
 import clsx from "clsx";
 import type { Fix, FixAttempt } from "@/lib/types";
 import { formatPctChange, formatScore } from "@/lib/format";
-import { Pill, SectionLabel } from "@/components/ui";
+import { LiveDot, Pill, SectionLabel } from "@/components/ui";
 import { DiffViewer } from "./DiffViewer";
 
 function FixSummary({ fix }: { fix: Fix }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-md border border-line px-3 py-2.5 text-sm">
+    <div
+      className={clsx(
+        "flex flex-wrap items-center gap-3 rounded-xl border px-3 py-2.5 text-sm",
+        fix.verified ? "border-transparent bg-resolved/[0.08] glow-resolved" : "border-line bg-surface",
+      )}
+    >
       <span className="font-mono text-muted">{formatScore(fix.before_score)}</span>
       <span className="text-muted" aria-hidden>
         →
       </span>
       <span className="font-mono text-ink">{formatScore(fix.after_score)}</span>
-      <span
-        className={clsx(
-          "font-mono text-xs",
-          fix.after_score <= fix.before_score * 1.1 ? "text-resolved" : "text-unresolved",
-        )}
-      >
+      <span className={clsx("font-mono text-xs", fix.after_score <= fix.before_score * 1.1 ? "text-resolved" : "text-unresolved")}>
         ({formatPctChange(fix.before_score, fix.after_score)})
       </span>
       <span className="ml-auto">
@@ -34,10 +34,9 @@ function AttemptRow({ attempt }: { attempt: FixAttempt }) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
+        <LiveDot variant={attempt.resolved ? "resolved" : "unresolved"} />
         <span className="font-mono text-xs text-muted">Attempt {attempt.attempt}</span>
-        <Pill variant={attempt.resolved ? "resolved" : "unresolved"}>
-          {attempt.resolved ? "Resolved" : "Still regressed"}
-        </Pill>
+        <Pill variant={attempt.resolved ? "resolved" : "unresolved"}>{attempt.resolved ? "Resolved" : "Still regressed"}</Pill>
         <span className="font-mono text-xs text-muted">{formatScore(attempt.score_after)}</span>
       </div>
       <p className="text-sm leading-relaxed text-ink">{attempt.rationale}</p>

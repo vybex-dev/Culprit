@@ -1,4 +1,4 @@
-// FILE: frontend/src/components/dashboard/TraceFeed.tsx — place at this path in the Culprit repo
+// FILE: frontend/src/components/dashboard/TraceFeed.tsx
 //
 // The live activity feed: a terminal-styled log of what the pipeline has
 // actually done so far, derived from real job state via lib/trace.ts.
@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { TraceEvent, TraceKind } from "@/lib/trace";
+import { LiveDot } from "@/components/ui";
 
 const KIND_GLYPH: Record<TraceKind, string> = {
   system: "›",
@@ -141,18 +142,17 @@ export function TraceFeed({
   return (
     <div
       className={clsx(
-        "overflow-hidden rounded-lg border border-trace-line bg-trace-bg shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]",
+        "overflow-hidden rounded-xl border border-trace-line bg-trace-bg shadow-[0_1px_0_rgba(255,255,255,0.04)_inset] transition-shadow",
+        live && "glow-butter",
         className,
       )}
     >
       <div className="flex items-center gap-2 border-b border-trace-line bg-trace-bg-raised px-3.5 py-2">
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-trace-accent" aria-hidden />
+        <LiveDot variant="butter" live={live} />
         <span className="font-mono text-[11px] tracking-wide text-trace-muted">Agent activity</span>
+        {live && <span className="ml-auto font-mono text-[10px] text-trace-muted/70">watching…</span>}
       </div>
-      <div
-        ref={scrollRef}
-        className="trace-scroll max-h-64 overflow-y-auto px-3.5 py-2.5 font-mono text-[12.5px]"
-      >
+      <div ref={scrollRef} className="trace-scroll max-h-64 overflow-y-auto px-3.5 py-2.5 font-mono text-[12.5px]">
         <AnimatePresence initial={false}>
           {shown.map((event) => (
             <Line key={event.id} event={event} isNew />

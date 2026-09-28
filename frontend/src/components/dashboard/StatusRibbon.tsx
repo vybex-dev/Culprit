@@ -1,4 +1,8 @@
-// FILE: frontend/src/components/dashboard/StatusRibbon.tsx — place at this path in the Culprit repo
+// FILE: frontend/src/components/dashboard/StatusRibbon.tsx
+//
+// The slim five-point overview (queued → bisecting → diagnosing → fixing
+// → done) — the "how far along is the whole job" read, complementing
+// Mission Control's richer per-lane detail below it.
 
 import clsx from "clsx";
 import { motion, useReducedMotion } from "motion/react";
@@ -20,19 +24,9 @@ function StageMarker({
   isDoneOk: boolean;
   isRunning: boolean;
 }) {
-  const reduceMotion = useReducedMotion();
-
   return (
     <span className="relative flex h-2.5 w-2.5 items-center justify-center">
-      {isRunning && !reduceMotion && (
-        <motion.span
-          className="absolute inset-0 rounded-full bg-butter-700"
-          initial={{ opacity: 0.55, scale: 1 }}
-          animate={{ opacity: 0, scale: 2.6 }}
-          transition={{ duration: 1.4, repeat: Infinity, ease: "easeOut" }}
-          aria-hidden
-        />
-      )}
+      {isRunning && <span className="breathe-ring absolute inset-0 rounded-full bg-butter-700" aria-hidden />}
       <span
         className={clsx(
           "relative h-2.5 w-2.5 rounded-full ring-4 ring-paper transition-colors",
