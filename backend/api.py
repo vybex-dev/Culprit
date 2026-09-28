@@ -96,6 +96,13 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from dotenv import load_dotenv
+
+# Load backend/.env BEFORE importing modules that read os.environ at import time
+# (models.py reads the Nemotron model IDs at import). Real shell env vars still
+# win over .env, so a one-off `export` keeps working as an override.
+load_dotenv(Path(__file__).with_name(".env"))
+
 from bisector import bisect_repo
 from diagnoser import DiagnosisResult, diagnose
 from fixer import FixProposal, VerifyOutcome, run_fix_loop_live
@@ -449,9 +456,21 @@ def _run_analysis(
         store.save(job)
 
         def _verify(proposal: FixProposal) -> VerifyOutcome:
-            bench_result = sandbox.apply_patch_and_benchmark(
-                result.regression_commit, proposal.patch, benchmark_command, n_runs=n_runs,
-            )
+            try:
+                bench_result = sandbox.apply_patch_and_benchmark(
+                    result.regression_commit, proposal.patch, benchmark_command, n_runs=n_runs,
+                )
+            except SandboxError as e:
+                if "patch did not apply" not in str(e):
+                    raise  # a real sandbox failure still fails the job
+                # Model-written diffs are often malformed. That's a failed
+                # attempt (the loop retries), not a dead job.
+                log.warning("fixer.patch_did_not_apply", job_id=job_id, error=str(e)[-300:])
+                regressed_score = next(
+                    (t.score for t in result.timeline if t.commit == result.regression_commit),
+                    result.baseline_score,
+                )
+                return VerifyOutcome(score_after=regressed_score, resolved=False)
             score_after = statistics.median(bench_result.raw_scores)
             pct_change = (
                 ((score_after - result.baseline_score) / result.baseline_score) * 100

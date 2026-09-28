@@ -57,8 +57,8 @@ log = structlog.get_logger("models")
 ModelName = Literal["nano", "ultra"]
 
 _MODEL_IDS: dict[ModelName, str] = {
-    "nano": os.environ.get("NEMOTRON_NANO_MODEL_ID", "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"),
-    "ultra": os.environ.get("NEMOTRON_ULTRA_MODEL_ID", "nvidia/Nemotron-3-Ultra-550b-a55b"),
+    "nano": os.environ.get("NEMOTRON_NANO_MODEL_ID", "nvidia/nemotron-3.5-lightning-30b-a3b"),
+    "ultra": os.environ.get("NEMOTRON_ULTRA_MODEL_ID", "nvidia/nemotron-3-ultra-550b-a55b"),
 }
 
 #_DEFAULT_BASE_URL = os.environ.get("NEBIUS_API_BASE_URL", "https://api.tokenfactory.nebius.com/v1")
@@ -166,9 +166,9 @@ def _call_once(
         start = time.perf_counter()
         try:
             body = {"model": model_id, "temperature": temperature, "messages": messages}
-            if model_id == _MODEL_IDS["nano"]:
-                # Nano = Bisector verdicts only; no reasoning trace (it ate the
-                # token budget and timed out).
+            if model_id in (_MODEL_IDS["nano"], _MODEL_IDS["ultra"]):
+                # Both are reasoning models; without this they spend the whole
+                # budget thinking and blow the read timeout. Strict JSON only.
                 body["chat_template_kwargs"] = {"enable_thinking": False}
             resp = client.post(
                 f"{base_url.rstrip('/')}/chat/completions",

@@ -230,6 +230,34 @@ def _validate_nano_verdict(parsed: dict, *, commit_sha: str) -> NanoVerdict:
         raise BisectionError(f"Nano response for {commit_sha} has wrong field types: {parsed!r}") from e
 
 
+def _reconcile_with_arithmetic(
+    nano: NanoVerdict, *, scores: list[float], baseline_score: float,
+    threshold_pct: float, job_id: str, commit_sha: str,
+) -> NanoVerdict:
+    """Nano still owns "inconclusive" and how many more runs to collect
+    (AGENTS.md #4). But "regressed"/"clean" is pure arithmetic — median vs
+    baseline against the threshold — and the small model has been seen
+    calling +2.5% "regressed" against a 15% threshold. If its verdict
+    contradicts the arithmetic, override it with the arithmetic result and
+    log loudly, so a wrong verdict can't silently steer the search."""
+    if nano.verdict == "inconclusive" or baseline_score <= 0:
+        return nano
+    median = statistics.median(scores)
+    pct = (median - baseline_score) / baseline_score * 100.0
+    expected: Verdict = "regressed" if pct > threshold_pct else "clean"
+    if nano.verdict == expected:
+        return nano
+    log.warning(
+        "bisector.nano_verdict_overridden", job_id=job_id, commit=commit_sha,
+        nano_verdict=nano.verdict, arithmetic_verdict=expected,
+        median_score=median, pct_change=pct, threshold_pct=threshold_pct,
+    )
+    return NanoVerdict(
+        verdict=expected, median_score=median,
+        pct_change_from_baseline=pct, additional_runs_needed=0,
+    )
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -279,7 +307,11 @@ def bisect_repo(
             model="nano", system_prompt=BISECTOR_SYSTEM_PROMPT,
             payload=payload, temperature=nano_temperature,
         )
-        return _validate_nano_verdict(result.parsed, commit_sha=commit_sha)
+        nano = _validate_nano_verdict(result.parsed, commit_sha=commit_sha)
+        return _reconcile_with_arithmetic(
+            nano, scores=scores, baseline_score=baseline_score,
+            threshold_pct=regression_threshold_pct, job_id=job_id, commit_sha=commit_sha,
+        )
 
     def _evaluate(commit_sha: str) -> CandidateEvaluation:
         ev = evaluate_candidate(commit_sha, run_more=_run_more, ask_nano=_ask_nano, initial_n_runs=n_runs)

@@ -65,6 +65,7 @@ from typing import Callable, Literal
 import structlog
 
 from models import call_nemotron
+from patcher import PatchBuildError, edits_to_patch
 
 log = structlog.get_logger("fixer")
 
@@ -77,17 +78,25 @@ FIXER_TEMPERATURE = 0.2  # within AGENTS.md #4's documented 0.1-0.3 for the Fixe
 # updating that doc first (AGENTS.md #3).
 FIXER_SYSTEM_PROMPT = """You are a senior engineer fixing a diagnosed performance regression.
 You will be given the diagnosis (root cause + cited lines), the full
-contents of the affected file(s), and — on retries — the result of your
-previous attempt.
+contents of the affected file(s) — each introduced by a "# FILE: <path>"
+line — and, on retries, the result of your previous attempt (if that
+attempt could not be applied, its note says why).
 
-Propose a minimal patch that addresses the specific root cause. Do not
-make unrelated changes. If this is a retry and your previous attempt did
-not resolve the regression, explain what you're changing about your
-approach before proposing the new patch.
+Propose a minimal fix that addresses the specific root cause. Do not make
+unrelated changes. If this is a retry and your previous attempt did not
+resolve the regression, explain what you're changing about your approach
+before proposing the new fix.
+
+Express the fix as EDITS, not as a diff. Each edit has the file path, an
+"old" string copied EXACTLY (character for character, including
+indentation and line breaks) from that file, and the "new" string that
+replaces it. Each "old" must appear exactly once in its file, so include
+enough surrounding lines to make it unique. To delete code, use "" as
+"new".
 
 Return ONLY JSON matching this schema:
 {
-  "patch": "<unified diff format>",
+  "edits": [{"file": "<path>", "old": "<exact text>", "new": "<replacement>"}],
   "rationale": "<1-3 sentences on why this fixes the root cause>",
   "confidence_will_resolve": "high" | "medium" | "low"
 }"""
@@ -252,7 +261,19 @@ def propose_patch(
         job_id=job_id, step=f"fix:attempt={attempt_number}", model="ultra",
         system_prompt=FIXER_SYSTEM_PROMPT, payload=payload, temperature=temperature,
     )
-    proposal = _validate_schema(result.parsed, attempt_number=attempt_number)
+    parsed = dict(result.parsed)
+    if "edits" in parsed and "patch" not in parsed:
+        # Model gave exact-text edits; build the unified diff deterministically
+        # (LLM-written diffs are rejected by `git apply` far too often).
+        try:
+            parsed["patch"] = edits_to_patch(full_file_contents, parsed["edits"])
+        except PatchBuildError as e:
+            # A bad edit is a failed attempt, not a dead job: the note below
+            # becomes the "patch", fails to apply in the sandbox, and is fed
+            # back to the model as previous_attempt_result.patch_applied.
+            log.warning("fixer.edit_did_not_match", job_id=job_id, attempt=attempt_number, error=str(e))
+            parsed["patch"] = f"# EDIT NOT APPLIED — {e}\n"
+    proposal = _validate_schema(parsed, attempt_number=attempt_number)
     log.info(
         "fixer.proposal", job_id=job_id, attempt=attempt_number,
         confidence_will_resolve=proposal.confidence_will_resolve,
