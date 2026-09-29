@@ -24,12 +24,14 @@ swapping Local for TokenFactory is a one-line change via get_sandbox().
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import logging
 import os
 import shutil
 import subprocess
 import tempfile
+import time
 import venv
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -252,35 +254,218 @@ class LocalGitSandbox(Sandbox):
 
 
 class TokenFactorySandbox(Sandbox):
-    """Real backend for the hackathon submission — wraps Nebius Token Factory
-    Sandboxes. STUBBED pending actual API/SDK access. Fill in run_benchmark()
-    to match LocalGitSandbox's contract exactly (same isolation guarantee:
-    fresh sandbox per candidate commit, per AGENTS.md non-negotiable #2).
+    """Real backend: Nebius Token Factory Sandboxes (ConTree) over plain HTTPS.
+
+    One VM-isolated, disposable instance per call (AGENTS.md #2): the commit's
+    tree is `git archive`d locally, piped in over stdin, unpacked in the VM,
+    optionally patched, deps installed, then benchmark_command runs n_runs
+    times inside the SAME VM. Each run prints `CULPRIT_SCORE=<x>`, parsed back
+    out of stdout. Any non-zero exit / missing score raises SandboxError —
+    never a fabricated score (AGENTS.md #1).
+
+    API surface used (docs.tokenfactory.nebius.com, sandboxes):
+      POST /v1/instances            -> 201 + Location: /v1/operations/{id}
+      GET  /v1/operations/{id}      -> status PENDING|ASSIGNED|EXECUTING|
+                                       SUCCESS|FAILED|CANCELLED, metadata.result
+      POST /v1/images/import        -> only if CONTREE_IMAGE is unset (see
+                                       _resolve_image; body shape inferred from
+                                       the operation metadata schema — verify).
+    Auth: `Authorization: Bearer <token>` + `Project: <project id>` header.
+
+    Env: NEBIUS_API_KEY (or CONTREE_TOKEN), CONTREE_PROJECT, optional
+    CONTREE_URL (default https://api.tokenfactory.nebius.com/sandboxes),
+    CONTREE_IMAGE (image UUID or `tag:...` containing python3 + git + pip;
+    strongly recommended — pick one from `contree images`).
+
+    Requests that CREATE operations are never auto-retried (an ambiguous
+    response could duplicate a run); status GETs are retried on transient errors.
     """
 
-    def __init__(self, repo_url: str, api_key: str | None = None):
-        self.repo_url = repo_url
-        self.api_key = api_key or os.environ.get("NEBIUS_API_KEY")
+    _DEFAULT_URL = "https://api.tokenfactory.nebius.com/sandboxes"
+    _DEFAULT_IMPORT_REF = "docker://docker.io/library/python:3.12"
+    _IMPORT_TAG = "culprit/python-3.12"
+    _TERMINAL = {"SUCCESS", "FAILED", "CANCELLED"}
+
+    def __init__(
+        self, repo_path: str, api_key: str | None = None, *, project: str | None = None,
+        base_url: str | None = None, image: str | None = None,
+        timeout_s: int = 600, poll_interval_s: float = 1.0,
+        client: "httpx.Client | None" = None,
+    ):
+        import httpx  # local: LocalGitSandbox users don't need it
+
+        self.repo_path = Path(repo_path).resolve()
+        if not (self.repo_path / ".git").exists():
+            raise SandboxError(f"{self.repo_path} is not a git repo root")
+        self.api_key = api_key or os.environ.get("CONTREE_TOKEN") or os.environ.get("NEBIUS_API_KEY")
         if not self.api_key:
-            raise SandboxError("NEBIUS_API_KEY not set — cannot create a real Token Factory sandbox")
+            raise SandboxError("NEBIUS_API_KEY (or CONTREE_TOKEN) not set — cannot create a Token Factory sandbox")
+        self.project = project or os.environ.get("CONTREE_PROJECT")
+        if not self.project:
+            raise SandboxError("CONTREE_PROJECT not set — the sandbox API requires a `Project` header")
+        self.base = (base_url or os.environ.get("CONTREE_URL") or self._DEFAULT_URL).rstrip("/") + "/v1"
+        self._image = image or os.environ.get("CONTREE_IMAGE")
+        self.timeout_s = timeout_s
+        self.poll_interval_s = poll_interval_s
+        self._http = client or httpx.Client(timeout=60.0)
+
+    # -- HTTP helpers -------------------------------------------------------
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.api_key}", "Project": self.project}
+
+    def _post(self, path: str, body: dict):
+        import httpx
+        try:
+            r = self._http.post(self.base + path, json=body, headers=self._headers())
+        except httpx.HTTPError as e:  # NOT retried on purpose — see class docstring
+            raise SandboxError(f"sandbox API request failed: {e}") from e
+        if r.status_code not in (200, 201, 202):
+            raise SandboxError(f"sandbox API {path} returned {r.status_code}: {r.text[:500]}")
+        return r
+
+    def _get_operation(self, op_id: str) -> dict:
+        import httpx
+        last: Exception | None = None
+        for delay in (0.0, 0.5, 1.5):
+            if delay:
+                time.sleep(delay)
+            try:
+                r = self._http.get(f"{self.base}/operations/{op_id}", headers=self._headers())
+                if r.status_code in (429, 500, 502, 503, 504):
+                    last = SandboxError(f"operation status {r.status_code}")
+                    continue
+                if r.status_code != 200:
+                    raise SandboxError(f"operation {op_id} status {r.status_code}: {r.text[:500]}")
+                return r.json()
+            except httpx.HTTPError as e:
+                last = e
+        raise SandboxError(f"could not read operation {op_id}: {last}")
+
+    def _wait(self, op_id: str) -> dict:
+        deadline = time.monotonic() + self.timeout_s
+        while True:
+            op = self._get_operation(op_id)
+            if op.get("status") in self._TERMINAL:
+                return op
+            if time.monotonic() > deadline:
+                try:
+                    self._http.delete(f"{self.base}/operations/{op_id}", headers=self._headers())
+                except Exception:  # best-effort cancel
+                    pass
+                raise SandboxError(f"sandbox operation {op_id} did not finish within {self.timeout_s}s")
+            time.sleep(self.poll_interval_s)
+
+    @staticmethod
+    def _decode(stream: dict | None) -> str:
+        if not stream:
+            return ""
+        val = stream.get("value", "")
+        if stream.get("encoding") == "base64":
+            return base64.b64decode(val).decode("utf-8", errors="replace")
+        return val
+
+    # -- image --------------------------------------------------------------
+    def _resolve_image(self) -> str:
+        if self._image:
+            return self._image
+        # UNVERIFIED body shape (inferred from ImageImportMetadata) — prefer
+        # setting CONTREE_IMAGE. Cached on the instance so we import once.
+        r = self._post("/images/import", {
+            "registry": {"url": self._DEFAULT_IMPORT_REF}, "tag": self._IMPORT_TAG, "timeout": 300,
+        })
+        op_id = r.headers.get("Location", "").rsplit("/", 1)[-1] or r.json().get("uuid")
+        op = self._wait(op_id)
+        image = op.get("result_image_uuid") or (op.get("result") or {}).get("image")
+        if op.get("status") != "SUCCESS" or not image:
+            raise SandboxError(f"image import failed: {op.get('error')}")
+        self._image = image
+        log.info("sandbox.tf.image_imported", image=image)
+        return image
+
+    # -- core ---------------------------------------------------------------
+    def _git_archive_b64(self, commit_sha: str) -> str:
+        try:
+            proc = subprocess.run(
+                ["git", "archive", "--format=tar.gz", commit_sha],
+                cwd=self.repo_path, capture_output=True, timeout=120,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise SandboxError(f"git archive timed out (120s) for {commit_sha}") from e
+        if proc.returncode != 0:
+            raise SandboxError(f"git archive failed for {commit_sha}: {proc.stderr.decode(errors='replace')}")
+        return base64.b64encode(proc.stdout).decode("ascii")
+
+    _SCRIPT = r"""set -e
+mkdir -p /work && cd /work
+base64 -d | tar xz -C /work
+if [ -n "$CULPRIT_PATCH_B64" ]; then
+  echo "$CULPRIT_PATCH_B64" | base64 -d > /tmp/culprit.patch
+  git apply --whitespace=fix /tmp/culprit.patch || patch -p1 < /tmp/culprit.patch
+fi
+for f in requirements.txt requirements.lock; do
+  if [ -f "$f" ]; then pip install -q -r "$f" 1>&2; break; fi
+done
+i=0
+while [ "$i" -lt "$CULPRIT_N_RUNS" ]; do
+  out=$(sh -c "$CULPRIT_BENCH")
+  echo "CULPRIT_SCORE=$(printf '%s\n' "$out" | tail -n 1)"
+  i=$((i+1))
+done
+"""
+
+    def _run(self, commit_sha: str, benchmark_command: str, n_runs: int, patch: str | None) -> BenchmarkResult:
+        image = self._resolve_image()
+        env = {"CULPRIT_N_RUNS": str(n_runs), "CULPRIT_BENCH": benchmark_command}
+        if patch is not None:
+            env["CULPRIT_PATCH_B64"] = base64.b64encode(patch.encode()).decode("ascii")
+        body = {
+            "command": self._SCRIPT, "shell": True, "image": image, "disposable": True,
+            "env": env, "timeout": self.timeout_s,
+            "stdin": {"value": self._git_archive_b64(commit_sha), "encoding": "ascii", "close": True},
+            "networking": {"enabled": True},
+        }
+        r = self._post("/instances", body)
+        op_id = r.headers.get("Location", "").rsplit("/", 1)[-1] or r.json().get("uuid")
+        if not op_id:
+            raise SandboxError("sandbox API did not return an operation id")
+        op = self._wait(op_id)
+
+        result = (op.get("metadata") or {}).get("result") or {}
+        stdout = self._decode(result.get("stdout"))
+        stderr = self._decode(result.get("stderr"))
+        state = result.get("state") or {}
+        if op.get("status") != "SUCCESS" or state.get("timed_out") or state.get("exit_code") not in (0, None):
+            raise SandboxError(
+                f"sandbox run failed for {commit_sha} (status={op.get('status')}, "
+                f"exit={state.get('exit_code')}, error={op.get('error')}): {stderr[-2000:]}"
+            )
+        scores: list[float] = []
+        for line in stdout.splitlines():
+            if line.startswith("CULPRIT_SCORE="):
+                try:
+                    scores.append(float(line.split("=", 1)[1]))
+                except ValueError as e:
+                    raise SandboxError(f"non-numeric benchmark score line: {line!r}") from e
+        if len(scores) != n_runs:
+            raise SandboxError(
+                f"expected {n_runs} benchmark scores for {commit_sha}, got {len(scores)}: {stdout[-1000:]!r}"
+            )
+        for i, sc in enumerate(scores, 1):
+            log.info("sandbox.run", backend="token_factory", commit=commit_sha, run=i, score=sc,
+                     patched=patch is not None, operation=op_id)
+        return BenchmarkResult(
+            commit_sha=commit_sha, raw_scores=scores, stdout_tail=stdout[-500:], patched=patch is not None,
+        )
 
     def run_benchmark(
         self, commit_sha: str, benchmark_command: str, n_runs: int = 5
     ) -> BenchmarkResult:
-        raise NotImplementedError(
-            "TokenFactorySandbox.run_benchmark: wire up against the real Token "
-            "Factory Sandbox API once access is confirmed. Must return the "
-            "same BenchmarkResult contract as LocalGitSandbox — every raw "
-            "score, never a fabricated one (AGENTS.md #1)."
-        )
+        return self._run(commit_sha, benchmark_command, n_runs, None)
 
     def apply_patch_and_benchmark(
         self, commit_sha: str, patch: str, benchmark_command: str, n_runs: int = 5
     ) -> BenchmarkResult:
-        raise NotImplementedError(
-            "TokenFactorySandbox.apply_patch_and_benchmark: wire up alongside "
-            "run_benchmark once Token Factory Sandbox API access is confirmed."
-        )
+        return self._run(commit_sha, benchmark_command, n_runs, patch)
 
 
 def get_sandbox(repo_url_or_path: str, use_token_factory: bool = False) -> Sandbox:

@@ -240,11 +240,34 @@ def _reconcile_with_arithmetic(
     calling +2.5% "regressed" against a 15% threshold. If its verdict
     contradicts the arithmetic, override it with the arithmetic result and
     log loudly, so a wrong verdict can't silently steer the search."""
-    if nano.verdict == "inconclusive" or baseline_score <= 0:
+    if baseline_score <= 0:
         return nano
     median = statistics.median(scores)
     pct = (median - baseline_score) / baseline_score * 100.0
     expected: Verdict = "regressed" if pct > threshold_pct else "clean"
+
+    if nano.verdict == "inconclusive":
+        # "Inconclusive" is only legitimate when noise could flip the verdict.
+        # If EVERY run (min..max) lands on the same side of the threshold as
+        # the median, the data is decisive no matter how noisy Nano thinks it
+        # is. Once we have a reasonable sample, override a spurious
+        # "inconclusive" with the arithmetic result.
+        if len(scores) < 5:
+            return nano
+        lo_pct = (min(scores) - baseline_score) / baseline_score * 100.0
+        hi_pct = (max(scores) - baseline_score) / baseline_score * 100.0
+        decisive = hi_pct <= threshold_pct or lo_pct > threshold_pct
+        if not decisive:
+            return nano
+        log.warning(
+            "bisector.nano_inconclusive_overridden", job_id=job_id, commit=commit_sha,
+            arithmetic_verdict=expected, median_score=median, pct_change=pct,
+            min_pct=lo_pct, max_pct=hi_pct, threshold_pct=threshold_pct, n_runs=len(scores),
+        )
+        return NanoVerdict(
+            verdict=expected, median_score=median,
+            pct_change_from_baseline=pct, additional_runs_needed=0,
+        )
     if nano.verdict == expected:
         return nano
     log.warning(

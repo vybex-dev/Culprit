@@ -212,13 +212,44 @@ def _verify_cited_lines(cited_lines: list[str], diff: str) -> bool:
         l for l in diff.splitlines()
         if l[:1] in ("+", "-") and not l.startswith(("+++", "---"))
     )
+    changed_lines = list(changed_lines)
     normalized_diff_lines = {_normalize_diff_line(l) for l in changed_lines}
+
+    # Multi-line statements (e.g. `x = f(\n "..."\n).fetchall()`) are often
+    # cited by the model as one logical line. Accept a citation that equals,
+    # ignoring whitespace, the concatenation of a run of WHOLE consecutive
+    # changed lines from the same hunk position. Still no partial-line matches.
+    def _squash(t: str) -> str:
+        return "".join(t.split())
+
+    spans: set[str] = set()
+    run: list[str] = []
+    runs: list[list[str]] = []
+    for l in diff.splitlines():
+        if l[:1] in ("+", "-") and not l.startswith(("+++", "---")):
+            run.append(_squash(_normalize_diff_line(l)))
+        else:
+            if run:
+                runs.append(run)
+            run = []
+    if run:
+        runs.append(run)
+    for r in runs:
+        for i in range(len(r)):
+            acc = ""
+            for j in range(i, len(r)):
+                acc += r[j]
+                spans.add(acc)
+
     for cited in cited_lines:
         candidate = _normalize_diff_line(cited)
         if not candidate:
             return False
-        if candidate not in normalized_diff_lines:
-            return False
+        if candidate in normalized_diff_lines:
+            continue
+        if _squash(candidate) in spans:
+            continue
+        return False
     return True
 
 

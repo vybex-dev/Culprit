@@ -61,9 +61,9 @@ _MODEL_IDS: dict[ModelName, str] = {
     "ultra": os.environ.get("NEMOTRON_ULTRA_MODEL_ID", "nvidia/nemotron-3-ultra-550b-a55b"),
 }
 
-#_DEFAULT_BASE_URL = os.environ.get("NEBIUS_API_BASE_URL", "https://api.tokenfactory.nebius.com/v1")
-_DEFAULT_BASE_URL = os.environ.get("NEBIUS_API_BASE_URL", "https://integrate.api.nvidia.com/v1")
-#https://integrate.api.nvidia.com/v1
+# Hackathon rule: must run on Nebius Token Factory. Default to Nebius; only
+# override NEBIUS_API_BASE_URL for local experiments (e.g. NVIDIA's endpoint).
+_DEFAULT_BASE_URL = os.environ.get("NEBIUS_API_BASE_URL", "https://api.tokenfactory.nebius.com/v1")
 # Soft guidance only (AGENT_SPECS.md §0) — logged as a warning, never blocked,
 # since Ultra's valid range genuinely spans two different callers' needs.
 _TEMP_BOUNDS: dict[ModelName, tuple[float, float]] = {
