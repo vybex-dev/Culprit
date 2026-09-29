@@ -203,7 +203,7 @@ def call_nemotron(
     temperature: float,
     base_url: str | None = None,
     api_key: str | None = None,
-    timeout_s: float = 60.0,
+    timeout_s: float = 180.0,
     client: httpx.Client | None = None,
     retry_delays_s: tuple[float, ...] = _DEFAULT_TRANSIENT_RETRY_DELAYS_S,
 ) -> NemotronResult:
