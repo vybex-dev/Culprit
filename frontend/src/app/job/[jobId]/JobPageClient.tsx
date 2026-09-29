@@ -8,7 +8,7 @@ import { DashboardSkeleton } from "@/components/dashboard/DashboardSkeleton";
 import { LiveDot } from "@/components/ui";
 
 export function JobPageClient({ jobId }: { jobId: string }) {
-  const { job, fatalError, isReconnecting } = useJobPolling(jobId);
+  const { job, fatalError, isReconnecting, clockOffsetMs } = useJobPolling(jobId);
 
   if (fatalError) {
     return (
@@ -22,5 +22,5 @@ export function JobPageClient({ jobId }: { jobId: string }) {
 
   if (!job) return <DashboardSkeleton />;
 
-  return <JobDashboard job={job} isReconnecting={isReconnecting} />;
+  return <JobDashboard job={job} isReconnecting={isReconnecting} clockOffsetMs={clockOffsetMs} />;
 }

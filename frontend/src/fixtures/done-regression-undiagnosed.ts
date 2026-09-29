@@ -11,13 +11,14 @@
 // never produced; this fixture is what lets that be checked visually
 // without waiting for such a job to occur for real.
 
-import { buildJob, FULL_TIMELINE, REGRESSION_COMMIT } from "./shared";
+import { stageTimes, buildJob, FULL_TIMELINE, REGRESSION_COMMIT } from "./shared";
 
 export const doneRegressionUndiagnosedJob = buildJob({
   job_id: "demo-done-regression-undiagnosed",
   status: "done",
   created_at: "2026-09-20T14:00:00Z",
   updated_at: "2026-09-20T14:27:00Z",
+  stage_times: stageTimes("2026-09-20T14:00:00Z", "2026-09-20T14:27:00Z", { bisecting: 5, diagnosing: 1570, done: "end" }),
   timeline: FULL_TIMELINE.slice(0, 5),
   regression_commit: REGRESSION_COMMIT,
   diagnosis: null,

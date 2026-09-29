@@ -15,8 +15,13 @@ import { JobDashboard } from "@/components/dashboard/JobDashboard";
 import clsx from "clsx";
 
 export default function StatesPage() {
-  const [selectedKey, setSelectedKey] = useState(FIXTURES[0].key);
+  // Fixtures are dated days ago, so live ones would show a huge elapsed time.
+  // Remember when the fixture was picked and shift the clock so "now" starts
+  // at the fixture's own updated_at and ticks from there.
+  const [pick, setPick] = useState(() => ({ key: FIXTURES[0].key, at: Date.now() }));
+  const selectedKey = pick.key;
   const selected = FIXTURES.find((f) => f.key === selectedKey) ?? FIXTURES[0];
+  const clockOffsetMs = Date.parse(selected.job.updated_at) - pick.at;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -29,7 +34,7 @@ export default function StatesPage() {
             <button
               key={fixture.key}
               type="button"
-              onClick={() => setSelectedKey(fixture.key)}
+              onClick={() => setPick({ key: fixture.key, at: Date.now() })}
               className={clsx(
                 "shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
                 fixture.key === selectedKey ? "bg-iris text-paper" : "bg-ink/[0.05] text-muted hover:bg-ink/[0.09]",
@@ -41,7 +46,7 @@ export default function StatesPage() {
         </div>
       </div>
       <p className="mx-auto mt-4 max-w-6xl px-6 text-xs text-muted">{selected.description}</p>
-      <JobDashboard key={selected.key} job={selected.job} />
+      <JobDashboard key={selected.key} job={selected.job} clockOffsetMs={clockOffsetMs} />
     </div>
   );
 }

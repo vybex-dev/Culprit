@@ -1,7 +1,7 @@
 // FILE: frontend/src/fixtures/fixing.ts — place at this path in the Culprit repo
 
 import {
-  buildJob,
+  stageTimes, buildJob,
   DIAGNOSIS,
   FIX_PATCH_ATTEMPT_1,
   FULL_TIMELINE,
@@ -13,6 +13,7 @@ export const fixingJob = buildJob({
   status: "fixing",
   created_at: "2026-09-20T14:00:00Z",
   updated_at: "2026-09-20T14:35:00Z",
+  stage_times: stageTimes("2026-09-20T14:00:00Z", "2026-09-20T14:35:00Z", { bisecting: 5, diagnosing: 1570, fixing: 1680 }),
   timeline: FULL_TIMELINE,
   regression_commit: REGRESSION_COMMIT,
   diagnosis: DIAGNOSIS,

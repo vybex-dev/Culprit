@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, getJob } from "./api";
 import type { JobState } from "./types";
+import { clockOffsetFrom } from "./clock";
 
 const POLL_INTERVAL_MS = 2000;
 const TERMINAL_STATUSES = new Set(["done", "failed"]);
@@ -17,12 +18,15 @@ interface UseJobPollingResult {
   fatalError: string | null;
   isReconnecting: boolean;
   isPolling: boolean;
+  /** Server clock minus browser clock (ms) — for skew-free live timers. */
+  clockOffsetMs: number;
 }
 
 export function useJobPolling(jobId: string): UseJobPollingResult {
   const [job, setJob] = useState<JobState | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
+  const [clockOffsetMs, setClockOffsetMs] = useState(0);
   const jobRef = useRef<JobState | null>(null);
   // Tracks which jobId the *last successful* fetch belongs to, so a poll
   // failure right after switching jobId reads as "never loaded" rather
@@ -42,6 +46,7 @@ export function useJobPolling(jobId: string): UseJobPollingResult {
         jobRef.current = next;
         loadedForJobIdRef.current = jobId;
         setJob(next);
+        setClockOffsetMs(clockOffsetFrom(next, Date.now()));
         setIsReconnecting(false);
         setFatalError(null);
       } catch (err) {
@@ -80,6 +85,7 @@ export function useJobPolling(jobId: string): UseJobPollingResult {
     job: currentJob,
     fatalError: isStale ? null : fatalError,
     isReconnecting: isStale ? false : isReconnecting,
+    clockOffsetMs,
     isPolling: !!status && !TERMINAL_STATUSES.has(status),
   };
 }

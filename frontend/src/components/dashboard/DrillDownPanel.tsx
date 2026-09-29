@@ -103,7 +103,7 @@ export function DrillDownPanel({
             role="dialog"
             aria-modal="true"
             aria-label={title}
-            className="focus:outline-none fixed inset-x-0 bottom-0 z-40 flex max-h-[85vh] flex-col rounded-t-2xl border-t border-line bg-paper shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-[480px] sm:rounded-none sm:border-l sm:border-t-0"
+            className="focus:outline-none fixed inset-x-0 bottom-0 z-40 flex max-h-[85vh] flex-col rounded-t-2xl border-t border-line bg-paper shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-[min(780px,94vw)] sm:rounded-none sm:border-l sm:border-t-0"
             initial={offscreen}
             animate={onscreen}
             exit={offscreen}
@@ -114,14 +114,14 @@ export function DrillDownPanel({
             }}
           >
             <div className="flex shrink-0 items-center justify-between border-b border-line px-4 py-3">
-              <h2 className="text-sm font-medium text-ink">{title}</h2>
+              <h2 className="font-mono text-sm font-medium text-ink">{title}</h2>
               <IconButton label="Close" onClick={onClose}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
                   <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
               </IconButton>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7 sm:py-6">{children}</div>
           </motion.aside>
         </>
       )}

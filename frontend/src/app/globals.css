@@ -50,7 +50,12 @@
   --diff-del-bg: rgba(255, 107, 107, 0.18);
   --diff-del-text: #ffb4b4;
   --cite-bg: var(--butter);
-  --cite-text: #14101c; /* fixed — this sits on a bright-yellow chip regardless of page theme */
+  --cite-text: #14101c; /* fixed — for small solid-yellow chips (e.g. the evidence legend swatch) */
+  /* Cited *diff lines* use a translucent wash instead of a solid fill, so an
+     add/del line keeps its green/red underneath — "cited" and "changed" are
+     independent facts and both should stay visible at once. */
+  --cite-overlay: rgba(255, 226, 77, 0.16);
+  --cite-bar: var(--butter-700);
 
   --trace-bg: #0f0a1c;
   --trace-bg-raised: #1b1130;

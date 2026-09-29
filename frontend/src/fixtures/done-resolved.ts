@@ -1,7 +1,7 @@
 // FILE: frontend/src/fixtures/done-resolved.ts — place at this path in the Culprit repo
 
 import {
-  buildJob,
+  stageTimes, buildJob,
   DIAGNOSIS,
   FIX_PATCH_ATTEMPT_1,
   FIX_PATCH_ATTEMPT_2,
@@ -14,6 +14,7 @@ export const doneResolvedJob = buildJob({
   status: "done",
   created_at: "2026-09-20T14:00:00Z",
   updated_at: "2026-09-20T14:44:00Z",
+  stage_times: stageTimes("2026-09-20T14:00:00Z", "2026-09-20T14:44:00Z", { bisecting: 5, diagnosing: 1570, fixing: 1680, done: "end" }),
   timeline: FULL_TIMELINE,
   regression_commit: REGRESSION_COMMIT,
   diagnosis: DIAGNOSIS,

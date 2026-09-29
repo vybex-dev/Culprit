@@ -14,11 +14,18 @@ import { MissionControl } from "./MissionControl";
 import { TimelineChart } from "./TimelineChart";
 import { RegressionCallout } from "./RegressionCallout";
 import { DrillDownPanel } from "./DrillDownPanel";
-import { DiagnosisSection, DiagnosisSectionLoading } from "./DiagnosisSection";
+import { DiagnosisSection, DiagnosisSectionLoading, type RegressionImpact } from "./DiagnosisSection";
 import { FixSection } from "./FixSection";
 import { FinalResultBanner } from "./FinalResultBanner";
 import { TraceFeed } from "./TraceFeed";
 import { ErrorBanner } from "./ErrorState";
+
+/** Score at the last good commit vs. at the guilty one, from the real
+ * timeline (oldest → newest). Null when there's no earlier measurement. */
+function regressionImpact(job: JobState): RegressionImpact | null {
+  const i = job.timeline.findIndex((e) => e.commit === job.regression_commit);
+  return i > 0 ? { before: job.timeline[i - 1].score, after: job.timeline[i].score } : null;
+}
 
 const TERMINAL_STATUSES = new Set<JobState["status"]>(["done", "failed"]);
 
@@ -38,7 +45,15 @@ function Enter({ order, children }: { order: number; children: ReactNode }) {
   );
 }
 
-export function JobDashboard({ job, isReconnecting }: { job: JobState; isReconnecting?: boolean }) {
+export function JobDashboard({
+  job,
+  isReconnecting,
+  clockOffsetMs = 0,
+}: {
+  job: JobState;
+  isReconnecting?: boolean;
+  clockOffsetMs?: number;
+}) {
   const [panelRequestedOpen, setPanelRequestedOpen] = useState(false);
   const regressionFound = hasRegressionFound(job);
   // Derived, not synced via an effect: if a fixture swap or a fresh poll
@@ -54,7 +69,7 @@ export function JobDashboard({ job, isReconnecting }: { job: JobState; isReconne
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
       <Enter order={0}>
-        <JobHeader job={job} isReconnecting={isReconnecting} />
+        <JobHeader job={job} isReconnecting={isReconnecting} clockOffsetMs={clockOffsetMs} />
       </Enter>
       <Enter order={1}>
         <StatusRibbon job={job} />
@@ -72,7 +87,7 @@ export function JobDashboard({ job, isReconnecting }: { job: JobState; isReconne
       )}
 
       <Enter order={3}>
-        <MissionControl job={job} />
+        <MissionControl job={job} clockOffsetMs={clockOffsetMs} />
       </Enter>
 
       <Enter order={4}>
@@ -103,7 +118,7 @@ export function JobDashboard({ job, isReconnecting }: { job: JobState; isReconne
         title={job.regression_commit ? `Commit ${shortSha(job.regression_commit)}` : "Regression"}
       >
         <div className="space-y-6">
-          {job.diagnosis ? <DiagnosisSection diagnosis={job.diagnosis} /> : <DiagnosisSectionLoading />}
+          {job.diagnosis ? <DiagnosisSection diagnosis={job.diagnosis} impact={regressionImpact(job)} /> : <DiagnosisSectionLoading />}
           {job.diagnosis && <FixSection fix={job.fix} attempts={job.fix_attempts} />}
         </div>
       </DrillDownPanel>

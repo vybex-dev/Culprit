@@ -94,6 +94,13 @@ export interface JobState {
   error: string | null;
   created_at: string;
   updated_at: string;
+  /** ISO time each stage was entered, keyed by status; "done"/"failed"
+   * mark the end of the run. Absent on older backends — the UI then just
+   * omits per-stage durations. */
+  stage_times?: Partial<Record<JobStatus, string>>;
+  /** Server clock when this response was produced — used to correct for
+   * clock skew so the live timer starts at the right number. */
+  server_time?: string | null;
 }
 
 export interface AnalyzeRequest {

@@ -7,7 +7,7 @@
 // way to see FinalResultBanner's "No regression found" branch in
 // /dev/states without a real backend run.
 
-import { buildJob, BENCHMARK_COMMAND, COMMIT_RANGE, REPO_URL } from "./shared";
+import { stageTimes, buildJob, BENCHMARK_COMMAND, COMMIT_RANGE, REPO_URL } from "./shared";
 import type { TimelineEntry } from "@/lib/types";
 
 const T0 = Date.parse("2026-09-21T09:00:00Z");
@@ -31,6 +31,7 @@ export const doneNoRegressionJob = buildJob({
   commit_range: COMMIT_RANGE,
   created_at: "2026-09-21T09:00:00Z",
   updated_at: "2026-09-21T09:31:00Z",
+  stage_times: stageTimes("2026-09-21T09:00:00Z", "2026-09-21T09:31:00Z", { bisecting: 5, done: "end" }),
   timeline: FLAT_TIMELINE,
   regression_commit: null,
   diagnosis: null,

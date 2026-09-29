@@ -19,11 +19,17 @@ function LineRow({ line, cited }: { line: DiffLine; cited: boolean }) {
   return (
     <div
       className={clsx(
-        "grid grid-cols-[3ch_3ch_1.5ch_1fr] gap-2 px-3 py-0.5 leading-5",
-        cited && "bg-[var(--cite-bg)] text-[var(--cite-text)]",
-        !cited && line.kind === "add" && "bg-[var(--diff-add-bg)] text-[var(--diff-add-text)]",
-        !cited && line.kind === "del" && "bg-[var(--diff-del-bg)] text-[var(--diff-del-text)]",
-        !cited && line.kind === "context" && "text-[var(--console-text)]",
+        "grid grid-cols-[3ch_3ch_1.5ch_1fr] gap-2 border-l-2 px-3 py-0.5 leading-5",
+        cited ? "border-l-[var(--cite-bar)]" : "border-l-transparent",
+        // Base color always comes from the line's own kind — cited never
+        // hides whether a line was added, removed, or unchanged.
+        line.kind === "add" && "bg-[var(--diff-add-bg)] text-[var(--diff-add-text)]",
+        line.kind === "del" && "bg-[var(--diff-del-bg)] text-[var(--diff-del-text)]",
+        line.kind === "context" && "text-[var(--console-text)]",
+        // Cited adds a translucent yellow wash on top of whatever's
+        // already there (a separate CSS property from bg-color, so it
+        // layers instead of overriding the add/del fill).
+        cited && "bg-[image:linear-gradient(var(--cite-overlay),var(--cite-overlay))]",
       )}
     >
       <span className="text-right text-[var(--console-muted)]">{line.oldLineNo ?? ""}</span>

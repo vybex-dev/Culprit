@@ -29,7 +29,8 @@ import {
   type PipelineLane,
 } from "@/lib/pipeline";
 import { buildTrace, type TraceEvent } from "@/lib/trace";
-import { CONFIDENCE_LABEL, categoryLabel, formatScore, shortSha } from "@/lib/format";
+import { CONFIDENCE_LABEL, categoryLabel, formatDuration, formatScore, shortSha } from "@/lib/format";
+import { laneElapsedMs, useNow } from "@/lib/clock";
 import { LiveDot } from "@/components/ui";
 import { AgentCursor, type CursorWaypoint } from "./AgentCursor";
 
@@ -168,12 +169,16 @@ function cursorWaypointFor(job: JobState, trace: TraceEvent[]): CursorWaypoint |
   return { id: `parked-${last?.id ?? parkedLane}`, xPct: LANE_X[parkedLane], yPct: CURSOR_Y, label: last?.text ?? "done" };
 }
 
-function LaneCard({ job, lane }: { job: JobState; lane: PipelineLane }) {
+function LaneCard({ job, lane, clockOffsetMs }: { job: JobState; lane: PipelineLane; clockOffsetMs: number }) {
   const status = laneStatus(job, lane);
   const summary = laneSummary(job, lane, status);
   const badge = laneBadge(job, lane, status);
   const Icon = LANE_ICON[lane];
   const reduceMotion = useReducedMotion();
+  // Ticks only while this lane is the one running; a finished lane's number
+  // is pinned to when the next stage began, so it stops for good.
+  const now = useNow(status === "running", 250);
+  const elapsed = laneElapsedMs(job, lane, now, clockOffsetMs);
   const opacity = status === "idle" ? 0.55 : badge.tone === "muted" ? 0.7 : 1;
 
   return (
@@ -193,15 +198,28 @@ function LaneCard({ job, lane }: { job: JobState; lane: PipelineLane }) {
           <Icon />
           <span className="text-[13px] font-medium">{LANE_LABEL[lane]}</span>
         </div>
-        <span
-          className={clsx(
-            "flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide",
-            BADGE_TEXT_CLASS[badge.tone],
+        <div className="flex items-center gap-2.5">
+          {elapsed !== null && (
+            <span
+              className={clsx(
+                "font-mono text-[11px] tabular-nums",
+                status === "running" ? "text-ink" : "text-muted",
+              )}
+              title={status === "running" ? "Running for" : "Took"}
+            >
+              {formatDuration(elapsed)}
+            </span>
           )}
-        >
-          <LiveDot variant={BADGE_DOT[badge.tone]} live={badge.tone === "running"} />
-          {badge.text}
-        </span>
+          <span
+            className={clsx(
+              "flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide",
+              BADGE_TEXT_CLASS[badge.tone],
+            )}
+          >
+            <LiveDot variant={BADGE_DOT[badge.tone]} live={badge.tone === "running"} />
+            {badge.text}
+          </span>
+        </div>
       </div>
 
       <div className="min-h-[2.5rem] text-[12.5px] leading-snug text-muted">
@@ -224,7 +242,7 @@ function LaneCard({ job, lane }: { job: JobState; lane: PipelineLane }) {
   );
 }
 
-export function MissionControl({ job }: { job: JobState }) {
+export function MissionControl({ job, clockOffsetMs = 0 }: { job: JobState; clockOffsetMs?: number }) {
   const trace = useMemo(() => buildTrace(job), [job]);
   const waypoint = useMemo(() => cursorWaypointFor(job, trace), [job, trace]);
   const isLive = job.status !== "done" && job.status !== "failed";
@@ -253,7 +271,7 @@ export function MissionControl({ job }: { job: JobState }) {
 
       <div className="relative grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
         {PIPELINE_LANES.map((lane) => (
-          <LaneCard key={lane} job={job} lane={lane} />
+          <LaneCard key={lane} job={job} lane={lane} clockOffsetMs={clockOffsetMs} />
         ))}
         {/* Lanes only sit side by side from `sm` up — stacked, the cursor's
             percentage coordinates would point at the wrong card (it'd say

@@ -134,6 +134,12 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _mark_stage(job: "JobState", status: str) -> None:
+    """Set job.status and record when that stage began."""
+    job.status = status  # type: ignore[assignment]
+    job.stage_times.setdefault(status, _now_iso())
+
+
 def _new_job_id() -> str:
     return uuid.uuid4().hex[:12]
 
@@ -211,6 +217,13 @@ class JobState(BaseModel):
     error: str | None = None  # flagged addition — see module docstring #2
     created_at: str
     updated_at: str
+    # When each stage was entered (ISO), keyed by status. "done"/"failed"
+    # mark the end of the run. Lets the UI show real per-stage durations
+    # and a clock that keeps counting between saves.
+    stage_times: dict[str, str] = Field(default_factory=dict)
+    # Server clock at response time (set only in GET /jobs/{id}); the UI uses
+    # it to correct for skew between the server's clock and the browser's.
+    server_time: str | None = None
 
 
 class AnalyzeRequest(BaseModel):
@@ -392,7 +405,7 @@ def _run_analysis(
     workdir = Path(tempfile.mkdtemp(prefix=f"prd_job_{job_id}_"))
     try:
         job = store.get(job_id)
-        job.status = "bisecting"
+        _mark_stage(job, "bisecting")
         job.updated_at = _now_iso()
         store.save(job)
 
@@ -416,13 +429,13 @@ def _run_analysis(
         if result.regression_commit is None:
             # Nothing to diagnose — an honest "clean" result (module
             # docstring flag #1), not a fabricated resolution of anything.
-            job.status = "done"
+            _mark_stage(job, "done")
             store.save(job)
             log.info("api.job_done", job_id=job_id, regression_commit=None,
                       candidates_evaluated=result.candidates_evaluated)
             return
 
-        job.status = "diagnosing"
+        _mark_stage(job, "diagnosing")
         store.save(job)
 
         diff, commit_message, changed_paths = _commit_diff_and_message(repo_path, result.regression_commit)
@@ -446,13 +459,13 @@ def _run_analysis(
             # nor "unresolved_diagnosis_only" honestly describes "never
             # attempted," and AGENT_SPECS.md doesn't say Fixer should run
             # against category="other" anyway).
-            job.status = "done"
+            _mark_stage(job, "done")
             store.save(job)
             log.info("api.job_done", job_id=job_id, regression_commit=result.regression_commit,
                       candidates_evaluated=result.candidates_evaluated, diagnosis_category="other")
             return
 
-        job.status = "fixing"
+        _mark_stage(job, "fixing")
         store.save(job)
 
         def _verify(proposal: FixProposal) -> VerifyOutcome:
@@ -512,14 +525,14 @@ def _run_analysis(
                 ),
             )
         job.final_result = "resolved" if fix_loop_result.resolved else "unresolved_diagnosis_only"
-        job.status = "done"
+        _mark_stage(job, "done")
         job.updated_at = _now_iso()
         store.save(job)
         log.info("api.job_done", job_id=job_id, regression_commit=result.regression_commit,
                   candidates_evaluated=result.candidates_evaluated, final_result=job.final_result)
     except Exception as e:
         job = store.get(job_id)
-        job.status = "failed"
+        _mark_stage(job, "failed")
         job.error = f"{type(e).__name__}: {e}"
         job.updated_at = _now_iso()
         store.save(job)
@@ -577,7 +590,8 @@ def create_app(store: JobStore | None = None) -> FastAPI:
     @app.get("/jobs/{job_id}", response_model=JobState)
     def get_job(job_id: str) -> JobState:
         try:
-            return store.get(job_id)
+            job = store.get(job_id)
+            return job.model_copy(update={"server_time": _now_iso()})
         except JobNotFoundError:
             raise HTTPException(404, f"job {job_id} not found")
 

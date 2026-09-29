@@ -6,7 +6,7 @@
 // specifically because BUILD_03 calls this state "easy to forget and easy
 // to fake-demo around."
 
-import { buildJob, DIAGNOSIS, FIX_PATCH_ATTEMPT_1, FULL_TIMELINE, REGRESSION_COMMIT } from "./shared";
+import { stageTimes, buildJob, DIAGNOSIS, FIX_PATCH_ATTEMPT_1, FULL_TIMELINE, REGRESSION_COMMIT } from "./shared";
 
 const attempt3Patch = `--- a/backend/orders/summary.py
 +++ b/backend/orders/summary.py
@@ -27,6 +27,7 @@ export const doneUnresolvedJob = buildJob({
   status: "done",
   created_at: "2026-09-20T14:00:00Z",
   updated_at: "2026-09-20T14:52:00Z",
+  stage_times: stageTimes("2026-09-20T14:00:00Z", "2026-09-20T14:52:00Z", { bisecting: 5, diagnosing: 1570, fixing: 1680, done: "end" }),
   timeline: FULL_TIMELINE,
   regression_commit: REGRESSION_COMMIT,
   diagnosis: DIAGNOSIS,

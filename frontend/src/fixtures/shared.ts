@@ -7,7 +7,7 @@
 // example (an N+1 query) — using the spec's own example as fixture data
 // means rendering it correctly *is* a conformance check, not just a demo.
 
-import type { Diagnosis, JobState, TimelineEntry } from "@/lib/types";
+import type { Diagnosis, JobState, JobStatus, TimelineEntry } from "@/lib/types";
 
 export const REPO_URL = "https://github.com/demo-org/orders-service";
 export const BENCHMARK_COMMAND = "pytest benchmarks/test_order_summary.py --benchmark-only";
@@ -124,4 +124,19 @@ export function buildJob(overrides: Partial<JobState> & Pick<JobState, "job_id" 
     timeline: [],
     ...overrides,
   };
+}
+
+/** Stage-entry times for fixtures: offsets in seconds from `created`, or
+ * "end" to mean the job's `updated_at` (the moment the run finished). */
+export function stageTimes(
+  created: string,
+  updated: string,
+  offsets: Partial<Record<JobStatus, number | "end">>,
+): Partial<Record<JobStatus, string>> {
+  const start = Date.parse(created);
+  const out: Partial<Record<JobStatus, string>> = {};
+  for (const [status, off] of Object.entries(offsets) as [JobStatus, number | "end"][]) {
+    out[status] = off === "end" ? updated : new Date(start + off * 1000).toISOString();
+  }
+  return out;
 }

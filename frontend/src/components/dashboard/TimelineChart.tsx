@@ -52,13 +52,19 @@ function makeDot(onSelectRegression: () => void) {
           if (e.key === "Enter" || e.key === " ") onSelectRegression();
         }}
       >
+        {/* Pulses via a CSS scale transform rather than animating the SVG
+            `r` attribute directly — Motion can momentarily hand the DOM an
+            undefined r mid-tween, which the browser rejects as an invalid
+            attribute ("Expected length, undefined"). Scale is always a
+            plain number, so it can't hit that state. */}
         <motion.circle
           cx={cx}
           cy={cy}
           r={9}
           fill="var(--butter)"
-          initial={{ opacity: 0.35 }}
-          animate={{ r: [9, 16, 9], opacity: [0.35, 0.05, 0.35] }}
+          style={{ transformOrigin: `${cx}px ${cy}px` }}
+          initial={{ scale: 1, opacity: 0.35 }}
+          animate={{ scale: [1, 16 / 9, 1], opacity: [0.35, 0.05, 0.35] }}
           transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
         />
         <circle cx={cx} cy={cy} r={5.5} fill="var(--butter)" stroke="var(--iris-700)" strokeWidth={1.5} />
