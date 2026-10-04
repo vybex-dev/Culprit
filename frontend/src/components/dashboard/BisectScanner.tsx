@@ -48,7 +48,10 @@ function median(xs: number[]): number {
 function CommitDetail({ cell, baseline }: { cell: Cell; baseline: number | null }) {
   const p = cell.probe;
   return (
-    <div className="rounded-lg border border-line bg-surface-2 p-3 text-sm">
+    // min-h = the tallest normal case (a probed commit with Nano verdicts), so clicking
+    // between measured / inferred / baseline cells doesn't make the card — and everything
+    // under it — jump up and down.
+    <div className="min-h-[11.5rem] rounded-lg border border-line bg-surface-2 p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <CopyMetaTag copyText={cell.sha}>{shortSha(cell.sha, 10)}</CopyMetaTag>
         <span className="text-[11px] text-muted">{STATE_LABEL[cell.state]}</span>

@@ -191,7 +191,7 @@ function LaneCard({ job, lane, clockOffsetMs }: { job: JobState; lane: PipelineL
   return (
     <motion.div
       className={clsx(
-        "relative flex flex-col gap-2.5 rounded-xl border p-3.5 transition-colors sm:pb-8",
+        "relative flex flex-col gap-2.5 rounded-xl border p-3.5 transition-colors lg:pb-8",
         status === "running" && "border-transparent bg-surface glow-butter",
         status === "done" && "border-line bg-surface",
         status === "failed" && "border-transparent bg-surface glow-unresolved",
@@ -202,25 +202,25 @@ function LaneCard({ job, lane, clockOffsetMs }: { job: JobState; lane: PipelineL
       transition={{ duration: 0.3 }}
     >
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-ink">
+        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-ink">
           <Icon />
           <span className="text-[13px] font-medium">{LANE_LABEL[lane]}</span>
         </div>
         <div className="flex items-center gap-2.5">
-          {elapsed !== null && (
-            <span
-              className={clsx(
-                "font-mono text-[11px] tabular-nums",
-                status === "running" ? "text-ink" : "text-muted",
-              )}
-              title={status === "running" ? "Running for" : "Took"}
-            >
-              {formatDuration(elapsed)}
-            </span>
-          )}
+          {/* Fixed slots for the timer and the badge: their text changes with every
+              state ("Running" → "No diagnosis", "9s" → "1m 05s") but the boxes don't. */}
           <span
             className={clsx(
-              "flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide",
+              "w-[3.25rem] text-right font-mono text-[11px] tabular-nums",
+              status === "running" ? "text-ink" : "text-muted",
+            )}
+            title={elapsed === null ? undefined : status === "running" ? "Running for" : "Took"}
+          >
+            {elapsed !== null ? formatDuration(elapsed) : ""}
+          </span>
+          <span
+            className={clsx(
+              "flex w-[5.75rem] items-center gap-1.5 whitespace-nowrap font-mono text-[10px] uppercase tracking-wide",
               BADGE_TEXT_CLASS[badge.tone],
             )}
           >
@@ -230,7 +230,9 @@ function LaneCard({ job, lane, clockOffsetMs }: { job: JobState; lane: PipelineL
         </div>
       </div>
 
-      <div className="min-h-[2.5rem] text-[12.5px] leading-snug text-muted">
+      {/* Fixed three-line slot (12.5px × 1.375 × 3): a short summary and a long one
+          occupy the same box; anything longer is clipped, with the full text on hover. */}
+      <div className="line-clamp-3 h-[3.25rem] overflow-hidden text-[12.5px] leading-snug text-muted" title={summary ?? undefined}>
         {summary ?? <span className="text-muted/60">Waiting for the previous stage.</span>}
       </div>
 
@@ -277,15 +279,16 @@ export function MissionControl({ job, clockOffsetMs = 0 }: { job: JobState; cloc
         <span className="font-mono text-[11px] text-muted/70">3 stages · sequential</span>
       </div>
 
-      <div className="relative grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
+      <div className="relative grid grid-cols-1 gap-3 p-4 lg:grid-cols-3">
         {PIPELINE_LANES.map((lane) => (
           <LaneCard key={lane} job={job} lane={lane} clockOffsetMs={clockOffsetMs} />
         ))}
-        {/* Lanes only sit side by side from `sm` up — stacked, the cursor's
+        {/* Lanes only sit side by side from `lg` up (below that a lane is too narrow
+            for its timer + badge without squeezing) — stacked, the cursor's
             percentage coordinates would point at the wrong card (it'd say
             "fix verified" hovering over Bisect), so it's hidden there. The
             lane badges and summaries carry the same information. */}
-        <div className="pointer-events-none absolute inset-0 hidden sm:block">
+        <div className="pointer-events-none absolute inset-0 hidden lg:block">
           <AgentCursor waypoint={waypoint} />
         </div>
       </div>

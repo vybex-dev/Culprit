@@ -38,7 +38,9 @@ function ElapsedClock({ job, clockOffsetMs }: { job: JobState; clockOffsetMs: nu
   return (
     <span
       className={
-        "flex items-center gap-1.5 font-mono text-xs tabular-nums " + (live ? "text-ink" : "text-muted")
+        // Fixed slot (fits "59m 59s" / "12h 05m"), so the pill/Cancel beside it never shift as the time grows.
+        "flex w-[4.5rem] items-center justify-end gap-1.5 whitespace-nowrap font-mono text-xs tabular-nums " +
+        (live ? "text-ink" : "text-muted")
       }
       title={live ? "Time since the job started" : "Total run time"}
     >
@@ -119,13 +121,16 @@ export function JobHeader({
             type="button"
             onClick={handleCancel}
             disabled={stopping}
-            className="rounded-md border border-line px-2.5 py-1 text-xs text-muted transition-colors hover:border-unresolved/50 hover:text-unresolved disabled:cursor-default disabled:opacity-60"
+            className="w-[7rem] whitespace-nowrap rounded-md border border-line px-2.5 py-1 text-center text-xs text-muted transition-colors hover:border-unresolved/50 hover:text-unresolved disabled:cursor-default disabled:opacity-60"
             title="Stops at the next checkpoint (between probes, run rounds, or fix attempts) — never mid-benchmark"
           >
             {cancelState === "error" ? "Couldn't cancel" : stopping ? "Stopping…" : "Cancel"}
           </button>
         )}
-        <Pill variant={variant}>{statusLabel(job)}</Pill>
+        {/* Fixed width: "Queued" and "Done — diagnosis only" render in the same box. */}
+        <Pill variant={variant} className="w-[10.5rem] justify-center whitespace-nowrap">
+          {statusLabel(job)}
+        </Pill>
       </div>
     </div>
   );

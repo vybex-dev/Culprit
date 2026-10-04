@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui";
 export function DashboardSkeleton() {
   return (
     <div
-      className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6"
+      className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6"
       aria-busy="true"
       aria-live="polite"
     >
@@ -28,7 +28,7 @@ export function DashboardSkeleton() {
       <Skeleton className="h-8 w-full" />
 
       <div className="rounded-2xl border border-line bg-surface-2 p-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           {[0, 1, 2].map((i) => (
             <div key={i} className="overflow-hidden rounded-xl">
               <Skeleton className="h-28 w-full" />
@@ -37,12 +37,12 @@ export function DashboardSkeleton() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
         <div className="overflow-hidden rounded-xl">
-          <Skeleton className="h-80 w-full" />
+          <Skeleton className="h-[440px] w-full" />
         </div>
         <div className="overflow-hidden rounded-xl">
-          <Skeleton className="h-80 w-full" />
+          <Skeleton className="h-[440px] w-full" />
         </div>
       </div>
     </div>

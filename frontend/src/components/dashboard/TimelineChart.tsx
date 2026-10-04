@@ -73,7 +73,7 @@ function fmtTick(v: number): string {
 
 function EmptyChart({ active }: { active: boolean }) {
   return (
-    <div className="flex h-80 flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed border-line-strong text-center">
+    <div className="flex h-[440px] flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed border-line-strong text-center">
       <span className="relative flex h-2 w-2" aria-hidden>
         {active && <span className="breathe-ring absolute inset-0 rounded-full bg-iris" />}
         <span className="relative h-2 w-2 rounded-full bg-iris" />
@@ -184,8 +184,10 @@ export function TimelineChart({
   const showLabels = (p: Pt) => p.step === 0 || p.isRegression || p.key === points[points.length - 1].key || p.key === hover;
 
   return (
-    <div className={clsx("relative w-full rounded-xl border border-line bg-surface", className)}>
-      <div className="flex items-center justify-between px-4 pt-3 text-[11px] text-muted">
+    // Fixed height: the card must not grow/shrink as the footer note, chart data or
+    // viewport changes (it sits beside the terminal, which uses the same height).
+    <div className={clsx("relative flex h-[440px] w-full flex-col rounded-xl border border-line bg-surface", className)}>
+      <div className="flex shrink-0 items-center justify-between px-4 pt-3 text-[11px] text-muted">
         <span>
           Benchmark median per commit · <span className="text-ink/70">dots are the raw runs</span>
         </span>
@@ -200,7 +202,7 @@ export function TimelineChart({
         </button>
       </div>
 
-      <div ref={wrapRef} className="relative">
+      <div ref={wrapRef} className="relative min-h-0 flex-1">
         <svg width={width} height={H} role="img" aria-label="Benchmark score per benchmarked commit" className="block overflow-visible">
           {/* grid + y labels */}
           {ticks.map((t) => (
@@ -410,7 +412,7 @@ export function TimelineChart({
           />
         )}
       </div>
-      <p className="px-4 pb-3 text-[11px] text-muted/80">
+      <p className="line-clamp-3 shrink-0 px-4 pb-3 text-[11px] text-muted/80">
         {n > points.length ? `${n - points.length} of ${n} commits were never run — the search ruled them out. ` : ""}
         Dashed segments cross commits that were never run — the slope there is not a measurement.
       </p>

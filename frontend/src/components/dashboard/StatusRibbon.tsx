@@ -48,14 +48,16 @@ export function StatusRibbon({ job }: { job: JobState }) {
 
   return (
     <div className="relative pt-1" aria-label="Pipeline progress" role="group">
-      <div className="pointer-events-none absolute left-0 right-0 top-[13px] h-px bg-line" aria-hidden />
-      <motion.div
-        className={clsx("pointer-events-none absolute left-0 top-[13px] h-px", failed ? "bg-unresolved/60" : "bg-iris/60")}
-        initial={false}
-        animate={{ width: `${progressPct}%` }}
-        transition={{ duration: reduceMotion ? 0 : 0.45, ease: "easeOut" }}
-        aria-hidden
-      />
+      {/* Every stage slot is the same fixed width (w-16), so the rail runs from the first
+          marker's centre to the last one's (inset-x-8 = half a slot) and the fill % lines up. */}
+      <div className="pointer-events-none absolute inset-x-8 top-[13px] h-px bg-line" aria-hidden>
+        <motion.div
+          className={clsx("h-px", failed ? "bg-unresolved/60" : "bg-iris/60")}
+          initial={false}
+          animate={{ width: `${progressPct}%` }}
+          transition={{ duration: reduceMotion ? 0 : 0.45, ease: "easeOut" }}
+        />
+      </div>
       <ol className="relative flex justify-between">
         {PIPELINE_STAGES.map((stage, i) => {
           const isPast = i < currentIndex;
@@ -66,7 +68,7 @@ export function StatusRibbon({ job }: { job: JobState }) {
           const isRunning = isCurrent && !isFailedHere && !isDoneOk;
 
           return (
-            <li key={stage} className="flex flex-col items-center gap-1.5">
+            <li key={stage} className="flex w-16 flex-col items-center gap-1.5">
               <StageMarker
                 isPast={isPast}
                 isCurrent={isCurrent}

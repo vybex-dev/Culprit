@@ -95,7 +95,7 @@ export default function JobsPage() {
             const live = !isTerminal(j.status);
             return (
               <li key={j.job_id}>
-                <Link href={`/job/${j.job_id}`} className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-4 py-3 transition-colors hover:bg-surface-2 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto]">
+                <Link href={`/job/${j.job_id}`} className="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-4 gap-y-1 px-4 py-3 transition-colors hover:bg-surface-2 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_7rem]">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       {live && <LiveDot variant="iris" live />}
@@ -129,7 +129,9 @@ export default function JobsPage() {
                     {j.n_probes > 0 && <span className="ml-2 text-muted/70">{j.n_probes} probes</span>}
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    <Pill variant={o.variant}>{o.label}</Pill>
+                    <Pill variant={o.variant} className="w-[6.5rem] justify-center whitespace-nowrap">
+                      {o.label}
+                    </Pill>
                     <span className="text-[11px] text-muted/80">{formatAgo(j.created_at)}</span>
                   </div>
                 </Link>

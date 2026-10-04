@@ -457,9 +457,11 @@ export function Terminal({
   return (
     <section
       aria-label="Live terminal"
-      className={clsx("flex min-h-0 flex-col overflow-hidden rounded-xl border border-white/[0.07] bg-[var(--trace-bg)] font-mono text-[12px] leading-[1.5] text-[var(--trace-text)]", className)}
+      // Fixed height (matches the chart card beside it): the log scrolls inside the box
+      // instead of the box growing/shrinking with the number of rows.
+      className={clsx("flex h-[440px] min-h-0 flex-col overflow-hidden rounded-xl border border-white/[0.07] bg-[var(--trace-bg)] font-mono text-[12px] leading-[1.5] text-[var(--trace-text)]", className)}
     >
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-white/[0.07] px-3 py-2">
+      <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-white/[0.07] px-3 py-2">
         <span className="flex items-center gap-2 text-[11px] text-[var(--trace-muted)]">
           <LiveDot variant={live ? "butter" : "neutral"} live={live} />
           <span className="text-[var(--trace-text)]">{live ? "live" : "recorded"}</span>
@@ -496,7 +498,7 @@ export function Terminal({
       <div
         ref={scroller}
         onScroll={onScroll}
-        className="trace-scroll relative max-h-[560px] min-h-[320px] flex-1 overflow-y-auto overflow-x-hidden px-3 py-2"
+        className="trace-scroll relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-2"
         role="log"
         aria-live="off"
       >
@@ -525,7 +527,7 @@ export function Terminal({
         )}
       </div>
 
-      <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/[0.07] px-3 py-1.5 text-[10px] text-[var(--trace-muted)]">
+      <footer className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/[0.07] px-3 py-1.5 text-[10px] text-[var(--trace-muted)]">
         <span className="tabular-nums">{events.length} events</span>
         {events.length > 0 && <span className="tabular-nums">{fmtDur(span / 1000)}</span>}
         {tokens > 0 && <span className="tabular-nums">{tokens.toLocaleString()} tokens</span>}
@@ -539,7 +541,7 @@ export function Terminal({
               ↓ jump to latest
             </button>
           )}
-          <button type="button" onClick={copyLog} disabled={!events.length} className="rounded px-2 py-0.5 hover:bg-white/[0.06] hover:text-[var(--trace-text)] disabled:opacity-40">
+          <button type="button" onClick={copyLog} disabled={!events.length} className="w-[4.5rem] rounded px-2 py-0.5 text-center hover:bg-white/[0.06] hover:text-[var(--trace-text)] disabled:opacity-40">
             {copied ? "copied" : "copy log"}
           </button>
           <button
