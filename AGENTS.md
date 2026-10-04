@@ -42,18 +42,20 @@ An agent that takes a repo + a benchmark, bisects commit history in Token Factor
 ## How to run locally
 
 ```
-# backend
+# backend  (no keys? prefix with CULPRIT_OFFLINE=1 — real benchmarks, labelled stand-in models)
 cd backend
 pip install -r requirements.txt
-export NEBIUS_API_KEY=...
-export TAVILY_API_KEY=...
+cp .env.example .env      # NEBIUS_API_KEY, CONTREE_PROJECT, CONTREE_IMAGE, TAVILY_API_KEY
 python api.py
 
 # frontend
 cd frontend
 npm install
+cp .env.example .env.local
 npm run dev
 ```
+
+Tests: `make test` (backend pytest + frontend unit tests/typecheck/lint). Before a real run, open `/new` — its readiness panel (`GET /preflight`) verifies keys and model IDs against the live catalog.
 
 (Fill in real setup steps here as they're built — keep this section accurate at all times, since it doubles as the README's setup section.)
 

@@ -46,11 +46,13 @@ import json
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 import httpx
 import structlog
+
+from events import Reporter, or_null
 
 log = structlog.get_logger("models")
 
@@ -103,6 +105,11 @@ class NemotronResult:
     attempts: int  # 1 or 2
     model_id: str
     latency_s: float
+    # Token accounting straight from the API's `usage` block (OpenAI-compatible
+    # shape). Empty when the server doesn't report it — never estimated.
+    usage: dict = field(default_factory=dict)
+    # True only for the explicit CULPRIT_OFFLINE stand-in (see offline.py).
+    offline: bool = False
 
 
 def _is_retryable_transient_error(e: httpx.HTTPError) -> bool:
@@ -145,11 +152,11 @@ def _call_once(
     *, client: httpx.Client, base_url: str, api_key: str, model_id: str,
     messages: list[dict], temperature: float, timeout_s: float,
     retry_delays_s: tuple[float, ...] = _DEFAULT_TRANSIENT_RETRY_DELAYS_S,
-) -> tuple[str, float]:
+) -> tuple[str, float, dict]:
     """One logical Nemotron call, with its own small retry-with-backoff for
     TRANSIENT network failures (see _is_retryable_transient_error) layered
     underneath call_nemotron()'s malformed-JSON retry above it. Returns
-    (message_text, latency_s), where latency_s times only the FINAL,
+    (message_text, latency_s, usage), where latency_s times only the FINAL,
     successful round-trip (not time spent on earlier failed attempts or
     backoff sleeps) — the number this module logs and passes on is meant
     to describe the model's real response time, not this wrapper's retry
@@ -190,7 +197,15 @@ def _call_once(
         message = body["choices"][0]["message"]
     except (KeyError, IndexError) as e:
         raise NemotronCallError(f"unexpected Nemotron response shape: {body!r}") from e
-    return _message_text(message), latency_s
+    usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}
+    return _message_text(message), latency_s, usage
+
+
+def _is_offline() -> bool:
+    """Explicit, opt-in stand-in mode (CULPRIT_OFFLINE=1). See offline.py:
+    the stand-in is labelled as such in every event, job and UI surface, and
+    is never selected implicitly (a missing API key is still a hard error)."""
+    return os.environ.get("CULPRIT_OFFLINE") == "1"
 
 
 def call_nemotron(
@@ -206,6 +221,7 @@ def call_nemotron(
     timeout_s: float = 180.0,
     client: httpx.Client | None = None,
     retry_delays_s: tuple[float, ...] = _DEFAULT_TRANSIENT_RETRY_DELAYS_S,
+    reporter: Reporter | None = None,
 ) -> NemotronResult:
     """The one function every agent calls.
 
@@ -220,12 +236,18 @@ def call_nemotron(
         retry (default (0.5, 1.5), i.e. up to 3 attempts per HTTP call) —
         override with () in tests that need to force/observe a transient
         failure without actually sleeping.
+    reporter: optional live-event sink (events.py). When given, the call is
+        wrapped in a `model` span carrying the exact request and the raw
+        response, so the dashboard terminal can show — and let you expand —
+        precisely what Nemotron was asked and what it said.
     """
+    rep = or_null(reporter)
+    offline = _is_offline()
     base_url = base_url or _DEFAULT_BASE_URL
     api_key = api_key or os.environ.get("NEBIUS_API_KEY")
-    if not api_key:
+    if not api_key and not offline:
         raise NemotronCallError("NEBIUS_API_KEY not set")
-    model_id = _MODEL_IDS[model]
+    model_id = f"offline-stub/{model}" if offline else _MODEL_IDS[model]
 
     lo, hi = _TEMP_BOUNDS[model]
     if not (lo <= temperature <= hi):
@@ -239,26 +261,52 @@ def call_nemotron(
         {"role": "user", "content": json.dumps(payload)},
     ]
 
+    span = rep.start(
+        "model", model, f"{model} · {step}",
+        role=model, model_id=model_id, step=step, temperature=temperature,
+        request={"system": system_prompt, "payload": payload}, offline=offline,
+    )
+
+    if offline:
+        from offline import offline_call  # local import: production path never loads it
+
+        t0 = time.perf_counter()
+        parsed = offline_call(model, payload)
+        raw = json.dumps(parsed)
+        latency_s = time.perf_counter() - t0
+        rep.end(span, f"{model} responded", role=model, model_id=model_id, latency_s=round(latency_s, 4),
+                attempts=1, usage={}, response=raw, offline=True)
+        return NemotronResult(
+            parsed=parsed, raw_response=raw, attempts=1, model_id=model_id,
+            latency_s=latency_s, usage={}, offline=True,
+        )
+
     owns_client = client is None
     if owns_client:
         client = httpx.Client()
     try:
         for attempt in (1, 2):
-            raw, latency_s = _call_once(
-                client=client, base_url=base_url, api_key=api_key, model_id=model_id,
-                messages=messages, temperature=temperature, timeout_s=timeout_s,
-                retry_delays_s=retry_delays_s,
-            )
+            try:
+                raw, latency_s, usage = _call_once(
+                    client=client, base_url=base_url, api_key=api_key, model_id=model_id,
+                    messages=messages, temperature=temperature, timeout_s=timeout_s,
+                    retry_delays_s=retry_delays_s,
+                )
+            except NemotronCallError as e:
+                rep.end(span, f"{model} call failed", role=model, model_id=model_id, error=str(e), ok=False)
+                raise
             log.info(
                 "nemotron.call",
                 job_id=job_id, step=step, model=model, model_id=model_id,
                 attempt=attempt, temperature=temperature, messages=messages,
-                raw_response=raw, latency_s=round(latency_s, 3),
+                raw_response=raw, latency_s=round(latency_s, 3), usage=usage,
             )
             try:
                 parsed = _extract_json(raw)
             except json.JSONDecodeError:
                 if attempt == 1:
+                    rep.emit("model.retry", model, f"{model} returned non-JSON — retrying once with a corrective nudge",
+                             step=step, raw=raw)
                     messages = messages + [
                         {"role": "assistant", "content": raw},
                         {"role": "user", "content": _RETRY_NUDGE},
@@ -268,14 +316,18 @@ def call_nemotron(
                     "nemotron.malformed_json_twice",
                     job_id=job_id, step=step, model=model, raw_response=raw,
                 )
+                rep.end(span, f"{model} returned non-JSON twice", role=model, model_id=model_id,
+                        response=raw, ok=False, error="non-JSON twice")
                 raise NemotronCallError(
                     f"[{job_id}/{step}] Nemotron ({model}) returned non-JSON twice; "
                     "not guessing at a result. See nemotron.malformed_json_twice log above."
                 )
             else:
+                rep.end(span, f"{model} responded", role=model, model_id=model_id,
+                        latency_s=round(latency_s, 3), attempts=attempt, usage=usage, response=raw, ok=True)
                 return NemotronResult(
                     parsed=parsed, raw_response=raw, attempts=attempt,
-                    model_id=model_id, latency_s=latency_s,
+                    model_id=model_id, latency_s=latency_s, usage=usage,
                 )
         raise NemotronCallError("unreachable")  # pragma: no cover
     finally:

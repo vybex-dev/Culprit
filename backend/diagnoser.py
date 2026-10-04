@@ -54,6 +54,7 @@ from typing import Literal
 
 import structlog
 
+from events import Reporter, or_null
 from models import call_nemotron
 from tavily_client import TavilyRef, search_grounding
 
@@ -189,30 +190,20 @@ def _normalize_diff_line(line: str) -> str:
     return stripped.strip()
 
 
-def _verify_cited_lines(cited_lines: list[str], diff: str) -> bool:
-    """True only if EVERY entry in cited_lines verifies against diff, as an
-    exact match against one of diff's actually-CHANGED lines (added `+` or
-    removed `-`, excluding the `+++`/`---` file-header lines) with its
-    leading marker stripped (see _normalize_diff_line). Unchanged context
-    lines — including a hunk header's trailing function-name text, e.g.
-    `@@ -10,6 +10,8 @@ def get_user_orders(user_id):` — are deliberately
-    excluded: they're not lines the commit touched, so citing one isn't
-    citing "the line responsible" (AGENTS.md rule 5). There is no
-    raw-substring-of-the-whole-diff fallback: that used to let a citation
-    of any unchanged line in the diff (or an incidental hunk-header
-    substring) count as a verified citation of the change itself — see
-    CODE_REVIEW_FINDINGS.md #6, which this fixes. An empty cited_lines
-    list never verifies: per AGENT_SPECS.md §2, "if you cannot point to
-    specific lines... use category 'other'" — a non-'other' category with
-    zero citations is exactly the unearned-confidence case this check
-    exists to catch."""
-    if not cited_lines:
-        return False
-    changed_lines = (
+def _cited_line_flags(cited_lines: list[str], diff: str) -> list[bool]:
+    """Per-citation verification, in order. A citation verifies only as an exact
+    match against one of the diff's actually-CHANGED lines (added `+` or removed
+    `-`, excluding the `+++`/`---` file headers) with its leading marker
+    stripped (see _normalize_diff_line), or as the whitespace-insensitive
+    concatenation of a run of WHOLE consecutive changed lines. Unchanged context
+    lines — including a hunk header's trailing function-name text — are
+    deliberately excluded: they're not lines the commit touched, so citing one
+    isn't citing "the line responsible" (AGENTS.md rule 5). There is no
+    raw-substring-of-the-whole-diff fallback (CODE_REVIEW_FINDINGS.md #6)."""
+    changed_lines = [
         l for l in diff.splitlines()
         if l[:1] in ("+", "-") and not l.startswith(("+++", "---"))
-    )
-    changed_lines = list(changed_lines)
+    ]
     normalized_diff_lines = {_normalize_diff_line(l) for l in changed_lines}
 
     # Multi-line statements (e.g. `x = f(\n "..."\n).fetchall()`) are often
@@ -241,16 +232,22 @@ def _verify_cited_lines(cited_lines: list[str], diff: str) -> bool:
                 acc += r[j]
                 spans.add(acc)
 
+    flags: list[bool] = []
     for cited in cited_lines:
         candidate = _normalize_diff_line(cited)
-        if not candidate:
-            return False
-        if candidate in normalized_diff_lines:
-            continue
-        if _squash(candidate) in spans:
-            continue
+        flags.append(bool(candidate) and (candidate in normalized_diff_lines or _squash(candidate) in spans))
+    return flags
+
+
+def _verify_cited_lines(cited_lines: list[str], diff: str) -> bool:
+    """True only if EVERY entry in cited_lines verifies against diff (see
+    _cited_line_flags). An empty cited_lines list never verifies: per
+    AGENT_SPECS.md §2, "if you cannot point to specific lines... use category
+    'other'" — a non-'other' category with zero citations is exactly the
+    unearned-confidence case this check exists to catch."""
+    if not cited_lines:
         return False
-    return True
+    return all(_cited_line_flags(cited_lines, diff))
 
 
 def _downgrade_to_other(diagnosis: DiagnosisResult) -> DiagnosisResult:
@@ -280,6 +277,7 @@ def diagnose(
     after_score: float,
     temperature: float = DIAGNOSER_TEMPERATURE,
     max_tavily_results: int = 3,
+    reporter: Reporter | None = None,
 ) -> DiagnosisResult:
     """The one entry point this module exposes. Raises DiagnoserError only
     for a genuinely schema-invalid Nemotron response; a citation that
@@ -294,14 +292,43 @@ def diagnose(
         "after_score": after_score,
     }
 
+    rep = or_null(reporter)
+    extra = {"reporter": reporter} if reporter is not None else {}
+    n_changed = sum(1 for l in diff.splitlines() if l[:1] in ("+", "-") and not l.startswith(("+++", "---")))
+    rep.emit(
+        "diagnose.start", "ultra",
+        f"handing the guilty diff ({n_changed} changed lines, {len(surrounding_context):,} chars of file context) to Nemotron 3 Ultra",
+        commit=guilty_commit_sha, changed_lines=n_changed, context_chars=len(surrounding_context),
+        before_score=before_score, after_score=after_score,
+    )
+
     result = call_nemotron(
         job_id=job_id, step="diagnose", model="ultra",
-        system_prompt=DIAGNOSER_SYSTEM_PROMPT, payload=base_payload, temperature=temperature,
+        system_prompt=DIAGNOSER_SYSTEM_PROMPT, payload=base_payload, temperature=temperature, **extra,
     )
     diagnosis = _validate_schema(result.parsed, guilty_commit_sha=guilty_commit_sha)
     diagnosis.diff = diff
 
+    def _emit_citation_check(d: DiagnosisResult, attempt: int) -> None:
+        if d.category == "other":
+            rep.emit("citation.check", "ultra", "category is 'other' — no citation required, none claimed",
+                     attempt=attempt, ok=True, lines=[])
+            return
+        flags = _cited_line_flags(d.cited_lines, diff)
+        ok = bool(d.cited_lines) and all(flags)
+        rep.emit(
+            "citation.check", "ultra",
+            (f"citations verified against the real diff ({sum(flags)}/{len(flags)} lines)" if ok
+             else f"citation check FAILED — {sum(flags)}/{len(flags)} cited lines are in the diff"),
+            attempt=attempt, ok=ok, category=d.category,
+            lines=[{"text": t, "verified": f} for t, f in zip(d.cited_lines, flags)],
+        )
+
+    _emit_citation_check(diagnosis, 1)
+
     if diagnosis.category != "other" and not _verify_cited_lines(diagnosis.cited_lines, diff):
+        rep.emit("citation.retry", "ultra",
+                 "asking Ultra once more: its cited lines don't appear in the diff", previous_category=diagnosis.category)
         log.warning(
             "diagnoser.citation_mismatch", job_id=job_id, commit=guilty_commit_sha,
             category=diagnosis.category, cited_lines=diagnosis.cited_lines,
@@ -318,12 +345,16 @@ def diagnose(
         result = call_nemotron(
             job_id=job_id, step="diagnose:citation_retry", model="ultra",
             system_prompt=f"{DIAGNOSER_SYSTEM_PROMPT}\n\n{CITATION_RETRY_ADDENDUM}",
-            payload=retry_payload, temperature=temperature,
+            payload=retry_payload, temperature=temperature, **extra,
         )
         diagnosis = _validate_schema(result.parsed, guilty_commit_sha=guilty_commit_sha)
         diagnosis.diff = diff
+        _emit_citation_check(diagnosis, 2)
 
         if diagnosis.category != "other" and not _verify_cited_lines(diagnosis.cited_lines, diff):
+            rep.emit("citation.downgrade", "ultra",
+                     f"still unverified — downgrading '{diagnosis.category}' to 'other' rather than passing along an uncited claim",
+                     original_category=diagnosis.category)
             log.error(
                 "diagnoser.citation_unverified_after_retry_downgrading", job_id=job_id,
                 commit=guilty_commit_sha, original_category=diagnosis.category,
@@ -333,12 +364,19 @@ def diagnose(
 
     if diagnosis.category != "other":
         diagnosis.tavily_refs = search_grounding(
-            diagnosis.category, diagnosis.cited_lines, max_results=max_tavily_results,
+            diagnosis.category, diagnosis.cited_lines, max_results=max_tavily_results, reporter=reporter,
         )
 
     log.info(
         "diagnoser.result", job_id=job_id, commit=guilty_commit_sha, category=diagnosis.category,
         confidence=diagnosis.confidence, citation_verification_failed=diagnosis.citation_verification_failed,
         tavily_refs_found=len(diagnosis.tavily_refs),
+    )
+    rep.emit(
+        "diagnose.result", "ultra",
+        f"root cause: {diagnosis.category} ({diagnosis.confidence} confidence)",
+        category=diagnosis.category, confidence=diagnosis.confidence,
+        citation_verification_failed=diagnosis.citation_verification_failed,
+        n_cited=len(diagnosis.cited_lines), n_refs=len(diagnosis.tavily_refs),
     )
     return diagnosis

@@ -1,6 +1,6 @@
 // FILE: frontend/src/components/dashboard/RegressionCallout.tsx
 
-import type { TimelineEntry } from "@/lib/types";
+import type { Commit, TimelineEntry } from "@/lib/types";
 import { formatPctChange, formatScore, shortSha } from "@/lib/format";
 
 function findBaseline(timeline: TimelineEntry[], regressionCommit: string): TimelineEntry | null {
@@ -12,14 +12,20 @@ function findBaseline(timeline: TimelineEntry[], regressionCommit: string): Time
 export function RegressionCallout({
   timeline,
   regressionCommit,
+  commit,
+  baseline: baselineScore,
   onOpen,
 }: {
   timeline: TimelineEntry[];
   regressionCommit: string;
+  /** Metadata for the guilty commit, when the backend supplied it. */
+  commit?: Commit;
+  /** The job's baseline score. Preferred over "the previous benchmarked commit". */
+  baseline?: number | null;
   onOpen: () => void;
 }) {
   const regressed = timeline.find((entry) => entry.commit === regressionCommit);
-  const baseline = findBaseline(timeline, regressionCommit);
+  const baseline = baselineScore != null ? { score: baselineScore } : findBaseline(timeline, regressionCommit);
   if (!regressed) return null;
 
   return (
@@ -28,7 +34,12 @@ export function RegressionCallout({
       onClick={onOpen}
       className="glow-butter flex w-full items-center justify-between gap-3 rounded-xl border border-transparent bg-butter/[0.14] px-4 py-3 text-left transition-colors hover:bg-butter/[0.22]"
     >
-      <span className="text-sm text-ink">
+      <span className="min-w-0 text-sm text-ink">
+        {commit?.subject && (
+          <span className="mb-0.5 block truncate text-xs text-muted">
+            “{commit.subject}”{commit.author ? ` — ${commit.author}` : ""}
+          </span>
+        )}
         Regression found at <span className="font-mono">{shortSha(regressed.commit)}</span>
         {baseline && (
           <>

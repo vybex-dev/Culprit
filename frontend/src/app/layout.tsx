@@ -17,7 +17,8 @@ import Script from "next/script";
 import "./globals.css";
 import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { LiveDot } from "@/components/ui";
+import { HeaderLogo } from "@/components/HeaderLogo";
+import { ModeBanner } from "@/components/ModeBanner";
 
 export const metadata: Metadata = {
   title: "Culprit — Performance Regression Detective",
@@ -34,9 +35,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         </Script>
         <ThemeProvider>
           <header className="border-b border-line bg-paper/95 backdrop-blur sticky top-0 z-20">
-            <div className="mx-auto max-w-6xl px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
               <Link href="/" className="flex items-center gap-2.5 group">
-                <LiveDot variant="iris" live size="md" />
+                <HeaderLogo size={28} />
                 <span className="font-mono text-[15px] font-medium tracking-tight text-ink">
                   culprit
                 </span>
@@ -46,6 +47,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                   <Link href="/new" className="hover:text-ink transition-colors">
                     New analysis
                   </Link>
+                  <Link href="/jobs" className="hover:text-ink transition-colors">
+                    History
+                  </Link>
                   <Link href="/dev/states" className="hidden sm:inline hover:text-ink transition-colors">
                     State reference
                   </Link>
@@ -54,6 +58,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               </div>
             </div>
           </header>
+          <ModeBanner />
           <main className="flex-1 flex flex-col">{children}</main>
         </ThemeProvider>
       </body>

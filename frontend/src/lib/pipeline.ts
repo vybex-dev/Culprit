@@ -22,7 +22,7 @@ export const STAGE_LABEL: Record<PipelineStage, string> = {
  * job didn't actually produce (AGENTS.md rule 1).
  */
 export function reachedStageIndex(job: JobState): number {
-  if (job.status !== "failed") {
+  if (job.status !== "failed" && job.status !== "cancelled") {
     return PIPELINE_STAGES.indexOf(job.status as PipelineStage);
   }
   if (job.fix_attempts.length > 0 || job.fix) return PIPELINE_STAGES.indexOf("fixing");
@@ -47,7 +47,8 @@ export const LANE_LABEL: Record<PipelineLane, string> = {
   fix: "Fix",
 };
 
-export type LaneStatus = "idle" | "running" | "done" | "failed";
+/** "stopped" = the user cancelled it: neither finished nor an error. */
+export type LaneStatus = "idle" | "running" | "done" | "failed" | "stopped";
 
 const LANE_STAGE_INDEX: Record<PipelineLane, number> = {
   bisect: PIPELINE_STAGES.indexOf("bisecting"),
@@ -66,13 +67,14 @@ export function laneStatus(job: JobState, lane: PipelineLane): LaneStatus {
   const reached = reachedStageIndex(job);
   const laneIndex = LANE_STAGE_INDEX[lane];
 
-  if (job.status === "failed") {
-    if (reached === laneIndex) return "failed";
+  if (job.status === "failed" || job.status === "cancelled") {
+    const stoppedAs: LaneStatus = job.status === "cancelled" ? "stopped" : "failed";
+    if (reached === laneIndex) return stoppedAs;
     if (reached < laneIndex) {
       // A failure recorded before any lane-specific data exists (e.g. the
       // first sandbox never came up) has nowhere else to attach — it
       // belongs to the first lane, not to three lanes that all look idle.
-      return reached === 0 && lane === "bisect" ? "failed" : "idle";
+      return reached === 0 && lane === "bisect" ? stoppedAs : "idle";
     }
     return "done";
   }

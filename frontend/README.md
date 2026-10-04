@@ -26,18 +26,63 @@ npm run lint
 
 ## How it's wired
 
-- `/` — a real form that `POST`s to `/analyze` and redirects to `/job/{job_id}`.
-- `/job/[jobId]` — polls `GET /jobs/{job_id}` every 2s (`lib/useJobPolling.ts`)
-  until the job reaches `done` or `failed`. A transient fetch failure shows
-  "Reconnecting…" without clearing the last known state; only a job that
-  never loaded at all shows a hard error.
-- `/dev/states` — the fixture harness described above. Not a hidden debug
-  route; kept around as the fastest way to check a state that's easy to
-  forget to test live (`failed`, `unresolved_diagnosis_only`).
-- `lib/types.ts` mirrors `backend/api.py`'s Pydantic models field-for-field
-  — that file is the source of truth here, not `docs/AGENT_SPECS.md` §4 or
-  `docs/TRD.md` §3 (those two disagree with each other; the real API
-  differs from both by adding `error`, used when `status: "failed"`).
+- `/` — landing page. "Run the live demo" starts a real job on the bundled
+  sample repo. (The hero's trace and numbers are a *recorded fixture* and are
+  captioned as such — never presented as a live run.)
+- `/new` — start an analysis: a one-click demo, or your own repo + benchmark
+  command (commit range optional). A **preflight panel** asks the backend
+  whether it's actually ready — API key present, Nemotron model IDs real in
+  the live catalog, sandbox configured — *before* anything is spent.
+- `/job/[jobId]` — the dashboard. Two feeds: `GET /jobs/{id}` is polled
+  (`lib/useJobPolling.ts`) for state, and `GET /jobs/{id}/events?after=<seq>`
+  is cursor-followed (`lib/useJobEvents.ts`) for the live terminal. Commits,
+  probes and fix attempts are persisted as they happen, so the scanner and
+  chart fill in live. A transient failure shows "Reconnecting…" without
+  clearing the last known state.
+- `/jobs` — history of every analysis (persisted by the backend).
+- `/dev/states` — the fixture harness: all dashboard states against static
+  data with no network. Kept as the fastest way to check states that are easy
+  to forget (`failed`, `cancelled`, `unresolved_diagnosis_only`).
+
+### The live terminal (`components/dashboard/Terminal.tsx`)
+
+Every row is a **real event** from the pipeline. `lib/terminal.ts` (pure,
+unit-tested against a stream captured from the real backend) turns events into
+rows: spans (`probe.start`…`probe.end`, model calls, Tavily searches, fix
+attempts) become one row with a live spinner + timer that settles in place;
+individual `sandbox.run` events fold into one row of bars colored against the
+real baseline and threshold; model calls expand to the exact request and raw
+response; citation checks, Tavily sources and patches expand inline. Anything
+left open when a job ends is marked *interrupted*, never an eternal spinner.
+
+### Other dashboard pieces
+
+- **Bisect scanner** — one cell per commit. *Solid* = measured in a sandbox;
+  *faint* = ruled out by reasoning only. A cancelled search is never painted
+  as "all clean" and claims no speedup (`lib/scanner.ts`, tested).
+- **Evidence chart** — custom SVG: real baseline, the regression-threshold
+  band, every raw run behind each median, dashed lines across unmeasured gaps,
+  and the verified fix landing back inside the band. Linear/log toggle.
+- **Under the hood** — per-model calls, latency, tokens (from the API's own
+  `usage`, never estimated), sandbox runs, Tavily searches.
+- **Export** — a PR-ready write-up and a real `.patch` file.
+
+`lib/types.ts` mirrors `backend/schema.py` field-for-field (that file is the
+source of truth). Every field added since the original contract is optional,
+so fixtures and older backends still render.
+
+## Tests
+
+```bash
+npm test          # node --test: terminal + scanner logic, against a REAL captured event stream
+npm run typecheck
+npm run lint
+npm run build
+```
+
+The fixtures in `tests/fixtures/` are a job and event stream captured from the
+actual pipeline (not hand-written), so these tests fail if the backend's real
+output drifts from what the UI expects.
 
 ## Fonts
 
@@ -47,34 +92,21 @@ rather than `next/font/google` — no runtime request to Google's font CDN
 on every page load, and no external network dependency at build time
 either.
 
-## Known contract gap — flagging, not guessing around
+## Contract notes
 
-`Diagnosis` (`AGENT_SPECS.md` §2's output schema, `TRD.md` §3, and the real
-`DiagnosisModel` in `backend/api.py`) has no field carrying the guilty
-commit's diff text — only `cited_lines` (short strings). But
-`BUILD_03_FRONTEND_DASHBOARD.md`'s drill-down panel asks for "the cited
-diff hunk, render as an actual diff" as the panel's wow moment, which
-needs that diff text somewhere in the API response.
-
-Nothing currently provides it. `lib/types.ts` models `Diagnosis.diff` as
-an **optional** field so the UI is ready the moment a backend owner adds
-it — `DiagnosisSection` renders the full inline diff (via `DiffViewer`,
-with `cited_lines` highlighted in Butter Yellow) when it's present, and
-falls back to a plain highlighted list of the cited snippets when it
-isn't. The `/dev/states` fixtures include the full diff so you can see
-the intended experience either way.
-
-**Suggested fix for whoever owns `backend/diagnoser.py` / `api.py`:** add
-`diff: str` to `DiagnosisModel`, populated from the same diff
-`diagnoser.py` already receives as input — it doesn't need a new fetch,
-just returning what it was already given.
+- `Diagnosis.diff` — the guilty commit's diff — **is** returned by the backend
+  (`DiagnosisModel.diff`), populated from the same diff the Diagnoser received.
+  The drill-down renders it inline with `cited_lines` highlighted; if it's ever
+  absent it falls back to a highlighted list of the cited snippets.
+- `FixAttempt.error` marks an attempt that crashed or didn't apply; its
+  `score_after` is then a placeholder and the UI shows no number for it.
 
 ## Design notes
 
 - Color tokens, font choices, and the "hairline rules instead of card
   stacks" structure are documented inline in `app/globals.css` and
-  `components/ui.tsx`. Single light theme by design (the brief's palette
-  — paper background, ink text — *is* the theme), not a light/dark pair.
+  `components/ui.tsx`. Light, dark and system themes (toggle in the header);
+  the terminal is a fixed dark console surface in both.
 - The diff viewer (`components/dashboard/DiffViewer.tsx`) is a small
   hand-rolled unified-diff parser (`lib/diff.ts`), not a dependency — the
   backend already hands back plain unified-diff strings, and the only

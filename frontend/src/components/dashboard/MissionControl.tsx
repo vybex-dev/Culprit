@@ -30,7 +30,7 @@ import {
 } from "@/lib/pipeline";
 import { buildTrace, type TraceEvent } from "@/lib/trace";
 import { CONFIDENCE_LABEL, categoryLabel, formatDuration, formatScore, shortSha } from "@/lib/format";
-import { laneElapsedMs, useNow } from "@/lib/clock";
+import { isJobLive, laneElapsedMs, useNow } from "@/lib/clock";
 import { LiveDot } from "@/components/ui";
 import { AgentCursor, type CursorWaypoint } from "./AgentCursor";
 
@@ -87,6 +87,7 @@ type BadgeTone = "running" | "ok" | "warn" | "muted" | "failed";
 function laneBadge(job: JobState, lane: PipelineLane, status: LaneStatus): { text: string; tone: BadgeTone } {
   if (status === "running") return { text: "Running", tone: "running" };
   if (status === "failed") return { text: "Failed", tone: "failed" };
+  if (status === "stopped") return { text: "Cancelled", tone: "warn" };
   if (status === "idle") return { text: "Not started", tone: "muted" };
 
   if (lane === "diagnose" && !job.diagnosis) {
@@ -119,10 +120,14 @@ function laneSummary(job: JobState, lane: PipelineLane, status: LaneStatus): str
 
   if (lane === "bisect") {
     const n = job.timeline.length;
-    if (n === 0) return status === "failed" ? (job.error ?? "Sandbox failed before scoring a commit.") : "Starting first sandbox…";
+    if (n === 0) {
+      if (status === "stopped") return "Cancelled before the first commit was scored.";
+      return status === "failed" ? (job.error ?? "Sandbox failed before scoring a commit.") : "Starting first sandbox…";
+    }
     const parts = [`${n} commit${n === 1 ? "" : "s"} scored`];
     if (job.regression_commit) parts.push(`regression at ${shortSha(job.regression_commit)}`);
     else if (status === "done") parts.push("no regression in range");
+    else if (status === "stopped") parts.push("cancelled before the search finished");
     return parts.join(" — ");
   }
 
@@ -130,6 +135,7 @@ function laneSummary(job: JobState, lane: PipelineLane, status: LaneStatus): str
     if (job.diagnosis) return `${categoryLabel(job.diagnosis.category)} — ${CONFIDENCE_LABEL[job.diagnosis.confidence]}`;
     if (status === "running") return "Reading the guilty diff…";
     if (status === "failed") return job.error ?? "Stopped before finishing.";
+    if (status === "stopped") return "Cancelled before finishing.";
     if (status === "done" && !job.regression_commit) return "Nothing to diagnose.";
     if (status === "done") return "No diagnosis was attached to this job.";
     return null;
@@ -139,6 +145,7 @@ function laneSummary(job: JobState, lane: PipelineLane, status: LaneStatus): str
   if (job.fix_attempts.length === 0) {
     if (status === "running") return "Generating a patch from the diagnosis…";
     if (status === "failed") return job.error ?? "Stopped before finishing.";
+    if (status === "stopped") return "Cancelled before finishing.";
     if (status === "done") return "No fix was attempted.";
     return null;
   }
@@ -188,6 +195,7 @@ function LaneCard({ job, lane, clockOffsetMs }: { job: JobState; lane: PipelineL
         status === "running" && "border-transparent bg-surface glow-butter",
         status === "done" && "border-line bg-surface",
         status === "failed" && "border-transparent bg-surface glow-unresolved",
+        status === "stopped" && "border-butter-700/40 bg-surface",
         status === "idle" && "border-line/70 bg-surface/60",
       )}
       animate={{ opacity }}
@@ -245,7 +253,7 @@ function LaneCard({ job, lane, clockOffsetMs }: { job: JobState; lane: PipelineL
 export function MissionControl({ job, clockOffsetMs = 0 }: { job: JobState; clockOffsetMs?: number }) {
   const trace = useMemo(() => buildTrace(job), [job]);
   const waypoint = useMemo(() => cursorWaypointFor(job, trace), [job, trace]);
-  const isLive = job.status !== "done" && job.status !== "failed";
+  const isLive = isJobLive(job);
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-line bg-surface-2">

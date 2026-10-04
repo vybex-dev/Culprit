@@ -132,6 +132,8 @@ Return ONLY JSON matching this schema:
 - Query pattern: `"{category} performance issue {relevant library/function name}"` or `"is {cited pattern} a known anti-pattern"`.
 - Purpose: attach a citation/confidence booster to the diagnosis, and this is your basis for the Tavily bonus prize — make sure the README explicitly explains this usage.
 - If Tavily returns nothing relevant, don't force a citation — leave `tavily_refs` empty rather than fabricating relevance.
+- **Implemented as a relevance floor.** Tavily scores every result 0..1; results below `TAVILY_MIN_SCORE` (default 0.2) are dropped, not shown. Each kept ref carries Tavily's own `score` and a bounded `snippet` (≤400 chars) of what the source says, so the dashboard can show *why* a source is cited. Results with no score are kept (absence of a score isn't evidence of irrelevance).
+- The query, every source, each score and the number dropped are emitted as `tavily.*` events and shown in the live terminal.
 
 ---
 
@@ -158,10 +160,15 @@ On retries, `previous_attempt_result` is populated:
   "previous_attempt_result": {
     "patch_applied": "<diff of what was tried>",
     "score_after_fix": 118.0,
-    "still_regressed": true
+    "still_regressed": true,
+    "note": "<optional — see below>"
   }
 }
 ```
+
+`note` is an **additive** field, sent only when an attempt never produced a measurement: the patch didn't apply, or the patched code crashed / timed out / printed no number (the error text is the note). It lets the model repair its own mistake instead of retrying blind. When absent, the payload is exactly the documented shape.
+
+**Crashes are failed attempts, not dead jobs.** A model-written patch that breaks the code is a normal outcome, so a benchmark-command failure on *patched* code (`sandbox_client.BenchmarkRunError`) counts as a failed attempt with feedback. Infrastructure failures (checkout, dependency install, sandbox API) still fail the job — a crash of the *benchmark itself* on a committed revision is never papered over. A crashed attempt is recorded with `error` set and its `score_after` is a placeholder, **not** a measurement; the UI shows no number for it.
 
 **System prompt**
 
@@ -184,6 +191,8 @@ Return ONLY JSON matching this schema:
 }
 ```
 
+> **As implemented:** the production prompt in `fixer.py` asks the model for exact-text `edits` (`file` / `old` / `new`) instead of a hand-written diff — models are unreliable at unified-diff line arithmetic. `patcher.edits_to_patch()` builds the real unified diff from those edits (and rejects any `old` text that doesn't match the file exactly once). Everything downstream still sees the `patch` string described here. The prompt also tells the model that, on a retry, `note` explains why its last attempt failed.
+
 **Retry policy**: max 3 attempts. After 3 failed attempts, stop and report the diagnosis plus all attempted patches transparently — do not claim success on an unresolved case. An honest "diagnosed but not auto-fixed" result is a legitimate and defensible outcome for the demo.
 
 ---
@@ -202,3 +211,36 @@ Return ONLY JSON matching this schema:
   "final_result": "resolved" | "unresolved_diagnosis_only"
 }
 ```
+
+The API's actual `JobState` (`backend/schema.py` — the source of truth the frontend's `lib/types.ts` mirrors) is this plus **additive, optional** fields; none change the meaning of the ones above:
+
+| Field | Purpose |
+|---|---|
+| `status` `"cancelled"` | a user-stopped job — neither `done` nor `failed` |
+| `error` | the clear failure message when `status: "failed"` (AGENTS.md rule 1) |
+| `mode` `"live"\|"offline"` | whether model roles were real Nemotron calls or the labelled offline stand-in |
+| `commits[]` | `{index, sha, subject, author, date}` for every commit in the range (index 0 = known good) |
+| `probes[]` | each benchmarked commit: `raw_scores`, `median_score`, `pct_change`, `verdict`, `rounds`, the Nano calls made, `wall_s` |
+| `baseline_score`, `threshold_pct`, `n_runs` | the yardstick, so the UI can draw the threshold band |
+| `window` | `[lo, hi]` commit indices still under suspicion (`hi < lo` ⇒ converged) |
+| `fix_attempts[].error` | set when the attempt crashed / didn't apply; `score_after` is then not a measurement |
+| `tavily_refs[].score/snippet` | see §2 |
+| `metrics` | per-model calls/latency/tokens, sandbox runs, Tavily searches — **derived from the event stream**, never stored separately |
+| `label`, `cancel_requested`, `stage_times`, `server_time` | presentation / control |
+
+State is persisted (SQLite) as it happens — commits, probes, timeline and fix attempts appear *while the job runs*, not only at the end.
+
+## 5. The live event stream
+
+`GET /jobs/{id}/events?after=<seq>` returns an append-only, per-job log: `{events, next, done, status}`. Each event is `{seq, ts, kind, source, message, data}`. It is emitted by the code that did the thing, at the moment it did it — nothing is scripted or replayed (`backend/events.py`).
+
+- **Spans**: `probe.start`/`probe.end`, `model.start`/`model.end`, `tavily.start`/`tavily.end`, `fix.start`/`fix.end`, `sandbox.instance.start`/`.end` share a `data.span` id; between the two an operation is genuinely in flight and the terminal shows a live spinner.
+- **Model calls** carry the exact `request` (system prompt + payload), the raw `response`, `model_id`, `latency_s`, `attempts` and the API's own `usage` block — every agent decision is inspectable.
+- **Point events** include `sandbox.run` (each benchmark run as it lands), `sandbox.deps` (cache hit/miss), `nano.verdict` (flags any arithmetic override of Nano), `bisect.window`, `citation.check` (per-line verification), `patch.built`, `verify.result`.
+- `done` is true only once the job is terminal **and** the cursor has caught up, so a client never stops polling with events unread.
+
+## 6. Bisection details added in implementation
+
+- **Endpoint confirmation** (as in `git bisect`): the end of the range is benchmarked first. If it isn't regressed the honest answer ("no regression in range") costs 1 probe instead of ~log₂(n); if it is, the search runs over the commits before it, so the chart always has both endpoints.
+- **Cooperative cancellation**: checked between probes, between run rounds and between fix attempts — never mid-benchmark.
+- **The regression threshold's reference is the baseline** (the known-good commit's median) everywhere: Nano's verdict, the "resolved" check, the dashboard, and the PR report quote the same "before".

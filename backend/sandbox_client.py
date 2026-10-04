@@ -36,6 +36,7 @@ import venv
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Callable
 
 import structlog
 
@@ -57,6 +58,25 @@ class SandboxError(Exception):
     swallow it into a fabricated score. See AGENTS.md non-negotiable #1."""
 
 
+class BenchmarkRunError(SandboxError):
+    """The sandbox worked, but the *benchmark command itself* failed — a
+    non-zero exit, a timeout, or output that isn't a number. Distinct from
+    infrastructure failures (checkout, dependency install, API errors), which
+    stay plain SandboxError.
+
+    Why the split matters: on a committed revision, either is fatal (we can't
+    honestly score it). But on a *model-patched* revision, a crash is a normal,
+    expected outcome — LLM patches break code — and the Fixer loop exists to
+    retry on it, using `detail` (the traceback) as feedback. It must not kill
+    the job. Subclassing SandboxError keeps every existing `except SandboxError`
+    and `pytest.raises(SandboxError)` valid.
+    """
+
+    def __init__(self, message: str, *, detail: str = "") -> None:
+        super().__init__(message)
+        self.detail = detail
+
+
 @dataclass
 class BenchmarkResult:
     commit_sha: str
@@ -65,8 +85,28 @@ class BenchmarkResult:
     patched: bool = False  # True when this result came from apply_patch_and_benchmark()
 
 
+# A sandbox listener receives (kind, data) for every real thing a backend does:
+# "checkout", "patch", "deps", "run", "instance". It is how the live terminal
+# shows each benchmark run landing *as it happens* instead of after the fact.
+# Listeners must never raise into the sandbox — _notify() swallows errors.
+SandboxListener = Callable[[str, dict[str, Any]], None]
+
+
 class Sandbox(ABC):
     """Common contract every sandbox backend must satisfy."""
+
+    #: Optional live-event hook (see SandboxListener). Set by the pipeline;
+    #: backends that don't know about it (or test fakes) simply ignore it.
+    listener: SandboxListener | None = None
+
+    def _notify(self, kind: str, **data: Any) -> None:
+        cb = self.listener
+        if cb is None:
+            return
+        try:
+            cb(kind, data)
+        except Exception:  # noqa: BLE001 — a UI hook must not break a benchmark
+            log.warning("sandbox.listener_failed", kind=kind)
 
     @abstractmethod
     def run_benchmark(
@@ -139,16 +179,20 @@ class LocalGitSandbox(Sandbox):
         if lock_hash is None:
             venv_dir = Path(tempfile.mkdtemp(prefix="prd_venv_"))
             self._build_venv(venv_dir, worktree)
+            self._last_deps = {"cache_hit": False, "lock_hash": None, "lockfile": None}
             return venv_dir, True
 
         venv_dir = self.cache_dir / f"venv-{lock_hash}"
         marker = venv_dir / ".prd_build_ok"
+        lockfile = self._find_lockfile(worktree)
         if not marker.exists():
             log.info("sandbox.venv.build", lock_hash=lock_hash)
             self._build_venv(venv_dir, worktree)
             marker.touch()
+            self._last_deps = {"cache_hit": False, "lock_hash": lock_hash, "lockfile": lockfile.name if lockfile else None}
         else:
             log.info("sandbox.venv.cache_hit", lock_hash=lock_hash)
+            self._last_deps = {"cache_hit": True, "lock_hash": lock_hash, "lockfile": lockfile.name if lockfile else None}
         return venv_dir, False
 
     def _build_venv(self, venv_dir: Path, worktree: Path) -> None:
@@ -197,6 +241,7 @@ class LocalGitSandbox(Sandbox):
         venv_dir: Path | None = None
         venv_is_ephemeral = False
         try:
+            t_checkout = time.perf_counter()
             try:
                 proc = subprocess.run(
                     ["git", "worktree", "add", "--detach", str(worktree), commit_sha],
@@ -206,16 +251,23 @@ class LocalGitSandbox(Sandbox):
                 raise SandboxError(f"checkout timed out (60s) for {commit_sha}") from e
             if proc.returncode != 0:
                 raise SandboxError(f"checkout failed for {commit_sha}: {proc.stderr}")
+            self._notify("checkout", commit=commit_sha, dur_s=round(time.perf_counter() - t_checkout, 3),
+                         backend="local-worktree")
 
             if patch is not None:
                 self._apply_patch(worktree, patch)  # raises SandboxError on failure
+                self._notify("patch", commit=commit_sha, applied=True)
 
+            t_deps = time.perf_counter()
             lock_hash = self._lockfile_hash(worktree)
             venv_dir, venv_is_ephemeral = self._venv_for_hash(lock_hash, worktree)
+            self._notify("deps", commit=commit_sha, dur_s=round(time.perf_counter() - t_deps, 3),
+                         **getattr(self, "_last_deps", {}))
 
             scores: list[float] = []
             last_stdout = ""
             for i in range(n_runs):
+                t_run = time.perf_counter()
                 try:
                     run = subprocess.run(
                         benchmark_command, shell=True, cwd=worktree,
@@ -223,23 +275,28 @@ class LocalGitSandbox(Sandbox):
                         env={**os.environ, "PATH": f"{venv_dir}/bin:{os.environ['PATH']}"},
                     )
                 except subprocess.TimeoutExpired as e:
-                    raise SandboxError(
-                        f"benchmark run {i + 1}/{n_runs} timed out after {self.timeout_s}s for {commit_sha}"
+                    raise BenchmarkRunError(
+                        f"benchmark run {i + 1}/{n_runs} timed out after {self.timeout_s}s for {commit_sha}",
+                        detail=f"timed out after {self.timeout_s}s",
                     ) from e
                 last_stdout = run.stdout.strip()
                 if run.returncode != 0:
-                    raise SandboxError(
-                        f"benchmark run {i + 1}/{n_runs} failed for {commit_sha}: {run.stderr[-2000:]}"
+                    raise BenchmarkRunError(
+                        f"benchmark run {i + 1}/{n_runs} failed for {commit_sha}: {run.stderr[-2000:]}",
+                        detail=run.stderr[-1500:],
                     )
                 try:
                     score = float(last_stdout.splitlines()[-1])
                 except (ValueError, IndexError) as e:
-                    raise SandboxError(
+                    raise BenchmarkRunError(
                         "benchmark_command must print a single numeric score as its "
-                        f"last stdout line; got: {last_stdout!r}"
+                        f"last stdout line; got: {last_stdout!r}",
+                        detail=f"last stdout line was not a number: {last_stdout[-300:]!r}",
                     ) from e
                 scores.append(score)
                 log.info("sandbox.run", commit=commit_sha, run=i + 1, score=score, patched=patch is not None)
+                self._notify("run", commit=commit_sha, run=i + 1, n_runs=n_runs, score=score,
+                             wall_s=round(time.perf_counter() - t_run, 3), patched=patch is not None)
 
             return BenchmarkResult(
                 commit_sha=commit_sha, raw_scores=scores, stdout_tail=last_stdout, patched=patch is not None,
@@ -300,9 +357,9 @@ class TokenFactorySandbox(Sandbox):
         self.api_key = api_key or os.environ.get("CONTREE_TOKEN") or os.environ.get("NEBIUS_API_KEY")
         if not self.api_key:
             raise SandboxError("NEBIUS_API_KEY (or CONTREE_TOKEN) not set — cannot create a Token Factory sandbox")
-        self.project = project or os.environ.get("CONTREE_PROJECT")
+        self.project = project or os.environ.get("CONTREE_PROJECT") or os.environ.get("NEBIUS_AI_PROJECT")
         if not self.project:
-            raise SandboxError("CONTREE_PROJECT not set — the sandbox API requires a `Project` header")
+            raise SandboxError("CONTREE_PROJECT (or NEBIUS_AI_PROJECT) not set — the sandbox API requires a `Project` header")
         self.base = (base_url or os.environ.get("CONTREE_URL") or self._DEFAULT_URL).rstrip("/") + "/v1"
         self._image = image or os.environ.get("CONTREE_IMAGE")
         self.timeout_s = timeout_s
@@ -428,17 +485,27 @@ done
         op_id = r.headers.get("Location", "").rsplit("/", 1)[-1] or r.json().get("uuid")
         if not op_id:
             raise SandboxError("sandbox API did not return an operation id")
+        self._notify("instance", phase="start", commit=commit_sha, operation=op_id,
+                     patched=patch is not None, disposable=True, image=image)
+        t_vm = time.perf_counter()
         op = self._wait(op_id)
+        self._notify("instance", phase="end", commit=commit_sha, operation=op_id,
+                     status=op.get("status"), dur_s=round(time.perf_counter() - t_vm, 3))
 
         result = (op.get("metadata") or {}).get("result") or {}
         stdout = self._decode(result.get("stdout"))
         stderr = self._decode(result.get("stderr"))
         state = result.get("state") or {}
         if op.get("status") != "SUCCESS" or state.get("timed_out") or state.get("exit_code") not in (0, None):
-            raise SandboxError(
+            msg = (
                 f"sandbox run failed for {commit_sha} (status={op.get('status')}, "
                 f"exit={state.get('exit_code')}, error={op.get('error')}): {stderr[-2000:]}"
             )
+            # The VM ran the script and it failed → the benchmark (or the
+            # patched code) is at fault, not the infrastructure.
+            if op.get("status") == "SUCCESS" and (state.get("timed_out") or state.get("exit_code") not in (0, None)):
+                raise BenchmarkRunError(msg, detail=stderr[-1500:])
+            raise SandboxError(msg)
         scores: list[float] = []
         for line in stdout.splitlines():
             if line.startswith("CULPRIT_SCORE="):
@@ -447,12 +514,18 @@ done
                 except ValueError as e:
                     raise SandboxError(f"non-numeric benchmark score line: {line!r}") from e
         if len(scores) != n_runs:
-            raise SandboxError(
-                f"expected {n_runs} benchmark scores for {commit_sha}, got {len(scores)}: {stdout[-1000:]!r}"
+            raise BenchmarkRunError(
+                f"expected {n_runs} benchmark scores for {commit_sha}, got {len(scores)}: {stdout[-1000:]!r}",
+                detail=f"expected {n_runs} scores, got {len(scores)}",
             )
         for i, sc in enumerate(scores, 1):
             log.info("sandbox.run", backend="token_factory", commit=commit_sha, run=i, score=sc,
                      patched=patch is not None, operation=op_id)
+            # All N runs execute inside ONE VM and come back together, so these
+            # are reported as a batch — the UI labels them as such rather than
+            # implying each streamed in live.
+            self._notify("run", commit=commit_sha, run=i, n_runs=n_runs, score=sc,
+                         patched=patch is not None, batched=True, operation=op_id)
         return BenchmarkResult(
             commit_sha=commit_sha, raw_scores=scores, stdout_tail=stdout[-500:], patched=patch is not None,
         )

@@ -103,7 +103,7 @@ export function DiagnosisSection({ diagnosis, impact }: { diagnosis: Diagnosis; 
           </div>
           {impact && (
             <div className="flex flex-col gap-2.5 border-t border-line px-5 py-4 sm:flex-row">
-              <Stat label="Last good commit" value={formatScore(impact.before)} />
+              <Stat label="Baseline (known good)" value={formatScore(impact.before)} />
               <Stat label="At this commit" value={formatScore(impact.after)} tone="bad" />
               {factor !== null && (
                 <Stat label="Slowdown" value={factor >= 10 ? `${Math.round(factor)}×` : `${factor.toFixed(1)}×`} tone="bad" />

@@ -125,8 +125,21 @@ def client(monkeypatch):
     return TestClient(app)
 
 
-def test_missing_commit_range_is_400(client):
-    resp = client.post("/analyze", json={"repo_url": "/tmp/whatever", "benchmark_command": "python bench.py"})
+def test_missing_commit_range_is_accepted_and_auto_detected(client):
+    """commit_range used to be a hard 400 (api.py flag #3). It is now optional —
+    the range is auto-detected inside the job, so problems (here: not a repo)
+    surface as a clear *failed job*, not a request error."""
+    resp = client.post("/analyze", json={"repo_url": "/tmp/definitely-not-a-repo", "benchmark_command": "python bench.py"})
+    assert resp.status_code == 200
+    job = _wait_for_terminal(client, resp.json()["job_id"])
+    assert job["status"] == "failed"
+    assert "not a git repository" in job["error"]
+
+
+def test_malformed_commit_range_is_400(client):
+    resp = client.post("/analyze", json={
+        "repo_url": "/tmp/whatever", "benchmark_command": "python bench.py", "commit_range": ["only-one"],
+    })
     assert resp.status_code == 400
 
 

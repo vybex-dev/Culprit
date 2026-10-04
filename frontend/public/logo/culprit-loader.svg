@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Culprit"><style>.cl-r1,.cl-r2,.cl-r3,.cl-dot,.cl-ping{transform-box:view-box;transform-origin:256px 256px}
+.cl-ping{opacity:0}
+
+/* LOOP: rings spin, then lock into the logo with a pulse. 3.2s cycle. */
+.cl-loop .cl-r1{animation:cl-a1 3.2s cubic-bezier(.65,0,.35,1) infinite}
+.cl-loop .cl-r2{animation:cl-a2 3.2s cubic-bezier(.65,0,.35,1) infinite}
+.cl-loop .cl-r3{animation:cl-a3 3.2s cubic-bezier(.65,0,.35,1) infinite}
+.cl-loop .cl-dot{animation:cl-dot 3.2s cubic-bezier(.4,0,.2,1) infinite}
+.cl-loop .cl-ping{animation:cl-ping 3.2s cubic-bezier(.2,.6,.3,1) infinite}
+@keyframes cl-a1{0%{transform:rotate(0)}60%,100%{transform:rotate(360deg)}}
+@keyframes cl-a2{0%{transform:rotate(0)}72%,100%{transform:rotate(-360deg)}}
+@keyframes cl-a3{0%{transform:rotate(0)}84%,100%{transform:rotate(720deg)}}
+@keyframes cl-dot{0%,70%{transform:scale(1)}86%{transform:scale(1.5)}100%{transform:scale(1)}}
+@keyframes cl-ping{0%,84%{transform:scale(1);opacity:0}86%{opacity:.55}100%{transform:scale(3.4);opacity:0}}
+
+/* INTRO: plays once - rings swing in and settle, dot pops, one ping. 1.6s. */
+.cl-intro .cl-r1{animation:cl-in 1s cubic-bezier(.22,1,.36,1) 0s both}
+.cl-intro .cl-r2{animation:cl-in 1s cubic-bezier(.22,1,.36,1) .1s both}
+.cl-intro .cl-r3{animation:cl-in 1s cubic-bezier(.22,1,.36,1) .2s both}
+.cl-intro .cl-r2{--from:140deg}
+.cl-intro .cl-r1,.cl-intro .cl-r3{--from:-140deg}
+.cl-intro .cl-dot{animation:cl-pop .55s cubic-bezier(.34,1.4,.64,1) .65s both}
+.cl-intro .cl-ping{animation:cl-ping1 .8s cubic-bezier(.2,.6,.3,1) 1.0s forwards}
+@keyframes cl-in{from{transform:rotate(var(--from)) scale(.78);opacity:0}to{transform:rotate(0) scale(1);opacity:1}}
+@keyframes cl-pop{from{transform:scale(0)}to{transform:scale(1)}}
+@keyframes cl-ping1{0%{transform:scale(1);opacity:.55}100%{transform:scale(3.4);opacity:0}}
+
+@media (prefers-reduced-motion:reduce){
+  .cl-r1,.cl-r2,.cl-r3,.cl-dot,.cl-ping{animation:none!important}
+}</style><g class="cl cl-loop" fill="none"><g stroke="#4b15c7" stroke-width="36" stroke-linecap="round"><path class="cl-r1" d="M413.67 358.39 A188 188 0 1 1 413.67 153.61"/><path class="cl-r2" d="M156.71 178.43 A126 126 0 1 1 156.71 333.57"/><path class="cl-r3" d="M300.46 302.04 A64 64 0 1 1 300.46 209.96"/></g><circle class="cl-ping" cx="256" cy="256" r="24" fill="#ffe24d"/><circle class="cl-dot" cx="256" cy="256" r="24" fill="#ffe24d"/></g></svg>

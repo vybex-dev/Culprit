@@ -64,6 +64,7 @@ from typing import Callable, Literal
 
 import structlog
 
+from events import Reporter, or_null
 from models import call_nemotron
 from patcher import PatchBuildError, edits_to_patch
 
@@ -80,7 +81,7 @@ FIXER_SYSTEM_PROMPT = """You are a senior engineer fixing a diagnosed performanc
 You will be given the diagnosis (root cause + cited lines), the full
 contents of the affected file(s) — each introduced by a "# FILE: <path>"
 line — and, on retries, the result of your previous attempt (if that
-attempt could not be applied, its note says why).
+attempt could not be applied or crashed when run, its note says why).
 
 Propose a minimal fix that addresses the specific root cause. Do not make
 unrelated changes. If this is a retry and your previous attempt did not
@@ -123,6 +124,11 @@ class PreviousAttemptResult:
     patch_applied: str
     score_after_fix: float
     still_regressed: bool
+    # Additive to AGENT_SPECS.md §3: why the attempt failed when it never got a
+    # score (the patched code crashed, timed out, or printed no number). Only
+    # sent to the model when non-empty, so the documented payload is unchanged
+    # in the ordinary case.
+    note: str = ""
 
 
 @dataclass
@@ -132,6 +138,7 @@ class VerifyOutcome:
     "never marks itself as verified.\""""
     score_after: float
     resolved: bool
+    note: str = ""  # set when the attempt crashed / didn't apply and so has no measured score
 
 
 @dataclass
@@ -146,6 +153,7 @@ class FixAttemptRecord:
     rationale: str
     score_after: float
     resolved: bool
+    error: str = ""  # non-empty ⇒ score_after is NOT a measurement (the patched run crashed / didn't apply)
 
 
 @dataclass
@@ -155,6 +163,14 @@ class FixLoopResult:
     final_patch: str | None  # last attempted patch — None only if attempts is empty
     before_score: float
     after_score: float | None  # last attempt's score_after — None only if attempts is empty
+
+
+def patch_stats(patch: str) -> dict[str, int]:
+    """Added/removed line counts of a unified diff (file headers excluded)."""
+    added = sum(1 for l in patch.splitlines() if l.startswith("+") and not l.startswith("+++"))
+    removed = sum(1 for l in patch.splitlines() if l.startswith("-") and not l.startswith("---"))
+    files = sum(1 for l in patch.splitlines() if l.startswith("+++ "))
+    return {"added": added, "removed": removed, "files": files}
 
 
 def _validate_schema(parsed: dict, *, attempt_number: int) -> FixProposal:
@@ -193,6 +209,8 @@ def run_fix_loop(
     verify: Callable[[FixProposal], VerifyOutcome],
     before_score: float,
     max_attempts: int = 3,
+    on_attempt: Callable[[FixAttemptRecord], None] | None = None,
+    reporter: Reporter | None = None,
 ) -> FixLoopResult:
     """propose(attempt_number, previous_attempt_result) -> FixProposal;
     verify(proposal) -> VerifyOutcome. Hard-caps at max_attempts (default
@@ -200,16 +218,40 @@ def run_fix_loop(
     cap, returns resolved=False with every attempt's full history, never
     raises and never retries silently past it (AGENTS.md #1's "diagnosed
     but not auto-fixed" is a legitimate, expected outcome here)."""
+    rep = or_null(reporter)
     attempts: list[FixAttemptRecord] = []
     previous_attempt_result: PreviousAttemptResult | None = None
 
     for attempt_number in range(1, max_attempts + 1):
+        rep.check_cancelled()
+        span = rep.start("fix", "fix", f"fix attempt {attempt_number}/{max_attempts}", attempt=attempt_number,
+                         max_attempts=max_attempts, retry=previous_attempt_result is not None)
         proposal = propose(attempt_number, previous_attempt_result)
-        outcome = verify(proposal)
-        attempts.append(FixAttemptRecord(
+        stats = patch_stats(proposal.patch)
+        rep.emit(
+            "patch.built", "fix",
+            f"patch proposed: +{stats['added']} −{stats['removed']} across {stats['files']} file(s) — {proposal.rationale}",
             attempt=attempt_number, patch=proposal.patch, rationale=proposal.rationale,
-            score_after=outcome.score_after, resolved=outcome.resolved,
-        ))
+            confidence=proposal.confidence_will_resolve, **stats,
+        )
+        outcome = verify(proposal)
+        record = FixAttemptRecord(
+            attempt=attempt_number, patch=proposal.patch, rationale=proposal.rationale,
+            score_after=outcome.score_after, resolved=outcome.resolved, error=outcome.note,
+        )
+        attempts.append(record)
+        rep.end(
+            span,
+            (f"attempt {attempt_number} VERIFIED — benchmark back to {outcome.score_after:.3f} ms" if outcome.resolved
+             else f"attempt {attempt_number} failed — the patched code did not run cleanly (no score)" if outcome.note
+             else f"attempt {attempt_number} did not resolve it — {outcome.score_after:.3f} ms"),
+            attempt=attempt_number, score_after=outcome.score_after, resolved=outcome.resolved,
+            before_score=before_score,
+            # non-empty ⇒ score_after is a placeholder, not a measurement
+            error=outcome.note or None,
+        )
+        if on_attempt:
+            on_attempt(record)
         if outcome.resolved:
             return FixLoopResult(
                 attempts=attempts, resolved=True, final_patch=proposal.patch,
@@ -217,6 +259,7 @@ def run_fix_loop(
             )
         previous_attempt_result = PreviousAttemptResult(
             patch_applied=proposal.patch, score_after_fix=outcome.score_after, still_regressed=True,
+            note=outcome.note,
         )
 
     return FixLoopResult(
@@ -240,6 +283,7 @@ def propose_patch(
     attempt_number: int,
     previous_attempt_result: PreviousAttemptResult | None = None,
     temperature: float = FIXER_TEMPERATURE,
+    reporter: Reporter | None = None,
 ) -> FixProposal:
     """One real Nemotron Ultra call, per AGENT_SPECS.md §3's input schema.
     `diagnosis` should be a plain dict (e.g. dataclasses.asdict() of
@@ -254,12 +298,14 @@ def propose_patch(
                 "patch_applied": previous_attempt_result.patch_applied,
                 "score_after_fix": previous_attempt_result.score_after_fix,
                 "still_regressed": previous_attempt_result.still_regressed,
+                **({"note": previous_attempt_result.note} if previous_attempt_result.note else {}),
             }
         ),
     }
+    extra = {"reporter": reporter} if reporter is not None else {}
     result = call_nemotron(
         job_id=job_id, step=f"fix:attempt={attempt_number}", model="ultra",
-        system_prompt=FIXER_SYSTEM_PROMPT, payload=payload, temperature=temperature,
+        system_prompt=FIXER_SYSTEM_PROMPT, payload=payload, temperature=temperature, **extra,
     )
     parsed = dict(result.parsed)
     if "edits" in parsed and "patch" not in parsed:
@@ -272,6 +318,11 @@ def propose_patch(
             # becomes the "patch", fails to apply in the sandbox, and is fed
             # back to the model as previous_attempt_result.patch_applied.
             log.warning("fixer.edit_did_not_match", job_id=job_id, attempt=attempt_number, error=str(e))
+            or_null(reporter).emit(
+                "patch.rejected", "fix",
+                f"Ultra's edit didn't match the file text — feeding the error back: {e}",
+                attempt=attempt_number, error=str(e),
+            )
             parsed["patch"] = f"# EDIT NOT APPLIED — {e}\n"
     proposal = _validate_schema(parsed, attempt_number=attempt_number)
     log.info(
@@ -290,6 +341,8 @@ def run_fix_loop_live(
     before_score: float,
     max_attempts: int = 3,
     temperature: float = FIXER_TEMPERATURE,
+    on_attempt: Callable[[FixAttemptRecord], None] | None = None,
+    reporter: Reporter | None = None,
 ) -> FixLoopResult:
     """The real thing: wires run_fix_loop's `propose` slot to real
     Nemotron calls via propose_patch(). `verify` is still the caller's to
@@ -298,13 +351,17 @@ def run_fix_loop_live(
     log.info("fixer.start", job_id=job_id, max_attempts=max_attempts, before_score=before_score)
 
     def _propose(attempt_number: int, previous_attempt_result: PreviousAttemptResult | None) -> FixProposal:
+        extra = {"reporter": reporter} if reporter is not None else {}
         return propose_patch(
             job_id=job_id, diagnosis=diagnosis, full_file_contents=full_file_contents,
             attempt_number=attempt_number, previous_attempt_result=previous_attempt_result,
-            temperature=temperature,
+            temperature=temperature, **extra,
         )
 
-    result = run_fix_loop(propose=_propose, verify=verify, before_score=before_score, max_attempts=max_attempts)
+    result = run_fix_loop(
+        propose=_propose, verify=verify, before_score=before_score, max_attempts=max_attempts,
+        on_attempt=on_attempt, reporter=reporter,
+    )
     log.info(
         "fixer.result", job_id=job_id, resolved=result.resolved,
         attempts=len(result.attempts), after_score=result.after_score,

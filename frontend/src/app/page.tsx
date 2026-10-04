@@ -1,18 +1,19 @@
 // FILE: frontend/src/app/page.tsx
 //
-// Marketing landing page. The form lives at /new (see that file) —
-// "Get started" below routes there. Every concrete number, commit hash,
-// and trace line on this page is pulled from fixtures/done-resolved.ts
-// (the same fixture the dashboard's own dev/states reference uses), not
-// written separately — so the landing page can never show a "demo" that
-// contradicts what the product actually renders once wired to a real
-// backend.
+// Marketing landing page. The form lives at /new (see that file).
+// Every concrete number, commit hash and trace line in the hero is pulled
+// from fixtures/done-resolved.ts (the same fixture the dashboard's own
+// dev/states reference uses) — and the page SAYS it is a recorded example.
+// It is not a live run, and it must never be captioned as one. The "Run the
+// live demo" button below starts a real job against the bundled sample repo.
 
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
+import { startDemo } from "@/lib/api";
 import { doneResolvedJob } from "@/fixtures/done-resolved";
 import { buildTrace } from "@/lib/trace";
 import { formatPctChange, formatScore, shortSha } from "@/lib/format";
@@ -85,6 +86,19 @@ function useHeroCursorWaypoint(cycle: number): CursorWaypoint {
 }
 
 export default function LandingPage() {
+  const router = useRouter();
+  const [demoState, setDemoState] = useState<"idle" | "starting" | "error">("idle");
+
+  async function runDemo() {
+    setDemoState("starting");
+    try {
+      const { job_id } = await startDemo();
+      router.push(`/job/${job_id}`);
+    } catch {
+      setDemoState("error");
+    }
+  }
+
   const cycle = useLoopedHeroTrace();
   const cursorWaypoint = useHeroCursorWaypoint(cycle);
   const reduceMotion = useReducedMotion();
@@ -116,21 +130,36 @@ export default function LandingPage() {
               Point it at a repo and a benchmark. It bisects the history, explains the regression in plain English
               with the lines to prove it, and verifies a fix in a sandbox before it tells you it&apos;s done.
             </p>
-            <div className="mt-8 flex flex-wrap items-center gap-4">
+            <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-3">
+              <button
+                type="button"
+                onClick={runDemo}
+                disabled={demoState === "starting"}
+                className="glow-iris flex items-center gap-2 rounded-md bg-iris px-5 py-2.5 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-70"
+              >
+                {demoState === "starting" && <LiveDot variant="butter" live />}
+                {demoState === "starting" ? "Starting…" : "Run the live demo"}
+              </button>
               <Link
                 href="/new"
-                className="glow-iris rounded-md bg-iris px-5 py-2.5 text-sm font-medium text-paper transition-opacity hover:opacity-90"
+                className="rounded-md border border-line-strong px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-surface-2"
               >
-                Get started
+                Analyze your repo
               </Link>
               <Link
                 href="/dev/states"
                 className="text-sm text-iris underline decoration-iris/30 underline-offset-4 hover:decoration-iris"
               >
-                See the dashboard first
+                Browse dashboard states
               </Link>
             </div>
-            <dl className="mt-12 grid max-w-md grid-cols-3 gap-5 border-t border-line pt-6">
+            {demoState === "error" && (
+              <p className="mt-3 text-xs text-unresolved" role="alert">
+                Couldn&apos;t reach the backend. Start it with <code className="font-mono">python api.py</code> (see the README) and try again.
+              </p>
+            )}
+            <p className="mt-12 text-[11px] text-muted/80">Example result from a recorded run:</p>
+            <dl className="mt-2 grid max-w-md grid-cols-3 gap-5 border-t border-line pt-5">
               {[
                 { dt: "Regression found at", dd: shortSha(REGRESSED.commit), accent: "bg-iris" },
                 { dt: "Benchmark", dd: `${formatScore(BASELINE.score)} → ${formatScore(REGRESSED.score)}`, accent: "bg-butter-700" },
@@ -162,7 +191,8 @@ export default function LandingPage() {
               <AgentCursor waypoint={cursorWaypoint} />
             </div>
             <p className="mt-3 text-center text-xs text-muted">
-              A real trace from one of the demo cases — this is what you watch while it works.
+              A recorded example. The live terminal streams the same kind of events from your own job — every git call,
+              sandbox run and Nemotron reply — as they happen.
             </p>
           </div>
         </div>
@@ -222,7 +252,7 @@ export default function LandingPage() {
         <div className="mx-auto flex max-w-6xl flex-col items-start gap-4 px-6 py-16 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-xl font-medium tracking-tight text-ink">Give it a repo.</h2>
-            <p className="mt-1.5 text-sm text-muted">A git URL, a benchmark command, and the commit range to search.</p>
+            <p className="mt-1.5 text-sm text-muted">A git URL and a benchmark command. The commit range is optional.</p>
           </div>
           <Link
             href="/new"

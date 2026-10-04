@@ -7,8 +7,9 @@ import { ApiError, getJob } from "./api";
 import type { JobState } from "./types";
 import { clockOffsetFrom } from "./clock";
 
-const POLL_INTERVAL_MS = 2000;
-const TERMINAL_STATUSES = new Set(["done", "failed"]);
+// Job state is small and the dashboard renders progressively, so poll briskly.
+const POLL_INTERVAL_MS = 1200;
+const TERMINAL_STATUSES = new Set(["done", "failed", "cancelled"]);
 
 interface UseJobPollingResult {
   job: JobState | null;

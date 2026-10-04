@@ -7,7 +7,7 @@
 // ".env.example", so that's the name standardized on here too) — per
 // BUILD_00_OVERVIEW.md's shared env vars, e.g. http://localhost:8000.
 
-import type { AnalyzeRequest, AnalyzeResponse, JobState } from "./types";
+import type { AnalyzeRequest, AnalyzeResponse, AppConfig, EventsPage, JobState, JobSummary, Preflight } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -18,7 +18,7 @@ export class ApiError extends Error {
   }
 }
 
-function apiBase(): string {
+export function apiBase(): string {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL;
   if (!base) {
     throw new ApiError(
@@ -56,4 +56,56 @@ export async function getJob(jobId: string): Promise<JobState> {
   });
   if (!res.ok) throw new ApiError(res.status, await parseErrorDetail(res));
   return res.json();
+}
+
+export async function getEvents(jobId: string, after: number, signal?: AbortSignal): Promise<EventsPage> {
+  const res = await fetch(`${apiBase()}/jobs/${encodeURIComponent(jobId)}/events?after=${after}&limit=500`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!res.ok) throw new ApiError(res.status, await parseErrorDetail(res));
+  return res.json();
+}
+
+export async function cancelJob(jobId: string): Promise<void> {
+  const res = await fetch(`${apiBase()}/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, await parseErrorDetail(res));
+}
+
+export async function startDemo(): Promise<AnalyzeResponse> {
+  const res = await fetch(`${apiBase()}/demo`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, await parseErrorDetail(res));
+  return res.json();
+}
+
+export async function listJobs(limit = 50): Promise<JobSummary[]> {
+  const res = await fetch(`${apiBase()}/jobs?limit=${limit}`, { cache: "no-store" });
+  if (!res.ok) throw new ApiError(res.status, await parseErrorDetail(res));
+  return res.json();
+}
+
+export async function getConfig(): Promise<AppConfig> {
+  const res = await fetch(`${apiBase()}/config`, { cache: "no-store" });
+  if (!res.ok) throw new ApiError(res.status, await parseErrorDetail(res));
+  return res.json();
+}
+
+export async function getPreflight(): Promise<Preflight> {
+  const res = await fetch(`${apiBase()}/preflight`, { cache: "no-store" });
+  if (!res.ok) throw new ApiError(res.status, await parseErrorDetail(res));
+  return res.json();
+}
+
+/** Download URLs served by the backend (report.md / fix.patch). */
+export function reportUrl(jobId: string): string {
+  return `${apiBase()}/jobs/${encodeURIComponent(jobId)}/report.md`;
+}
+export function patchUrl(jobId: string): string {
+  return `${apiBase()}/jobs/${encodeURIComponent(jobId)}/fix.patch`;
+}
+
+export async function fetchReportMarkdown(jobId: string): Promise<string> {
+  const res = await fetch(reportUrl(jobId), { cache: "no-store" });
+  if (!res.ok) throw new ApiError(res.status, await parseErrorDetail(res));
+  return res.text();
 }

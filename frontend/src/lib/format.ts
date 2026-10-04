@@ -98,3 +98,17 @@ export function repoDisplayName(repoUrl: string): string {
   }
   return segments[segments.length - 1] ?? repoUrl;
 }
+
+/** "just now" · "3m ago" · "2h ago" · "5d ago" — for the history list. */
+export function formatAgo(iso: string, nowMs: number = Date.now()): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const s = Math.max(0, Math.round((nowMs - t) / 1000));
+  if (s < 10) return "just now";
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}

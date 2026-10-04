@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Culprit — logo animation preview</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{margin:0;font:14px/1.4 ui-sans-serif,system-ui,sans-serif;color:#14101c;background:#fffdf7}
+  h1{font-size:18px;margin:0;padding:24px 32px}
+  .row{display:grid;grid-template-columns:1fr 1fr}
+  .panel{padding:32px;display:flex;flex-direction:column;align-items:center;gap:28px}
+  .dark{background:#0b0812;color:#f3eeff}
+  .item{display:flex;flex-direction:column;align-items:center;gap:10px}
+  .item img{display:block}
+  code{font:12px ui-monospace,Menlo,monospace;opacity:.65}
+  button{font:inherit;padding:6px 14px;border-radius:6px;border:1px solid currentColor;background:none;color:inherit;cursor:pointer}
+</style></head><body>
+<h1>Culprit logo animation <button onclick="location.reload()">Replay intros</button></h1>
+<div class="row">
+  <div class="panel">
+    <div class="item"><img src="frontend/public/logo/culprit-loader.svg" width="160" height="160" alt=""><code>culprit-loader.svg (loops)</code></div>
+    <div class="item"><img src="frontend/public/logo/culprit-intro.svg" width="160" height="160" alt=""><code>culprit-intro.svg (plays once)</code></div>
+    <div class="item"><img src="frontend/public/logo/culprit-loader.svg" width="36" height="36" alt=""><code>small, e.g. inline button loader</code></div>
+  </div>
+  <div class="panel dark">
+    <div class="item"><img src="frontend/public/logo/culprit-loader-on-dark.svg" width="160" height="160" alt=""><code>culprit-loader-on-dark.svg</code></div>
+    <div class="item"><img src="frontend/public/logo/culprit-intro-on-dark.svg" width="160" height="160" alt=""><code>culprit-intro-on-dark.svg</code></div>
+    <div class="item"><img src="frontend/public/logo/culprit-loader-on-dark.svg" width="36" height="36" alt=""><code>small</code></div>
+  </div>
+</div>
+</body></html>

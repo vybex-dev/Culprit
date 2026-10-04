@@ -1,0 +1,497 @@
+{
+ "job_id": "8eabef858889",
+ "status": "done",
+ "repo_url": "/tmp/tmpb0nf7n62/demo/orders-service",
+ "benchmark_command": "python bench.py",
+ "commit_range": [
+  "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+  "e0c27bf5de90b84336fb6bbd8584008e614dcbba"
+ ],
+ "timeline": [
+  {
+   "commit": "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+   "score": 9.896,
+   "timestamp": "2026-09-30T11:08:18.744171+00:00"
+  },
+  {
+   "commit": "3064b1b4414afcf1742f1f40b81292baf04e1919",
+   "score": 9.965,
+   "timestamp": "2026-09-30T11:08:23.071612+00:00"
+  },
+  {
+   "commit": "6776abf193a30eca9e3410026847d0e62b4356b3",
+   "score": 9.868,
+   "timestamp": "2026-09-30T11:08:23.209867+00:00"
+  },
+  {
+   "commit": "26f047a7863417b169c8cf88aa25fe46880cc2a1",
+   "score": 9.918,
+   "timestamp": "2026-09-30T11:08:23.346160+00:00"
+  },
+  {
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "score": 302.501,
+   "timestamp": "2026-09-30T11:08:25.438845+00:00"
+  },
+  {
+   "commit": "2014f67887be7c5d1d334d34380961c4669ab80e",
+   "score": 303.058,
+   "timestamp": "2026-09-30T11:08:22.935392+00:00"
+  },
+  {
+   "commit": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+   "score": 303.071,
+   "timestamp": "2026-09-30T11:08:20.835856+00:00"
+  }
+ ],
+ "regression_commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+ "diagnosis": {
+  "category": "n_plus_one",
+  "explanation": "Inside the loop `for order in orders:`, the change now runs `order[\"line_items\"] = db.query(\"line_items\", order_id=order[\"id\"])` once per iteration, replacing the earlier batched lookup with one call per item. With N items this makes N+1 round-trips, which is what slowed the benchmark. [offline stand-in classifier \u2014 not Nemotron]",
+  "cited_lines": [
+   "        order[\"line_items\"] = db.query(\"line_items\", order_id=order[\"id\"])"
+  ],
+  "confidence": "medium",
+  "tavily_refs": [],
+  "citation_verification_failed": false,
+  "diff": "diff --git a/app/summary.py b/app/summary.py\nindex 69318cc..d194b2e 100644\n--- a/app/summary.py\n+++ b/app/summary.py\n@@ -1,16 +1,9 @@\n-from collections import defaultdict\n-\n from .serialize import serialize_order\n \n \n def get_order_summary(db, customer_id):\n     orders = db.query(\"orders\", customer_id=customer_id)\n-    order_ids = [o[\"id\"] for o in orders]\n-    items = db.query_in(\"line_items\", \"order_id\", order_ids)\n-    items_by_order = defaultdict(list)\n-    for item in items:\n-        items_by_order[item[\"order_id\"]].append(item)\n     for order in orders:\n-        order[\"line_items\"] = items_by_order.get(order[\"id\"], [])\n+        order[\"line_items\"] = db.query(\"line_items\", order_id=order[\"id\"])\n \n     return [serialize_order(o) for o in orders]\n"
+ },
+ "fix_attempts": [
+  {
+   "attempt": 1,
+   "patch": "--- a/app/summary.py\n+++ b/app/summary.py\n@@ -1,9 +1,16 @@\n+from collections import defaultdict\n+\n from .serialize import serialize_order\n \n \n def get_order_summary(db, customer_id):\n     orders = db.query(\"orders\", customer_id=customer_id)\n+    order_ids = [o[\"id\"] for o in orders]\n+    items = db.query_in(\"line_items\", \"order_id\", order_ids)\n+    items_by_order = defaultdict(list)\n+    for item in items:\n+        items_by_order[item[\"order_id\"]].append(item)\n     for order in orders:\n-        order[\"line_items\"] = db.query(\"line_items\", order_id=order[\"id\"])\n+        order[\"line_items\"] = items_by_order.get(order[\"id\"], [])\n \n     return [serialize_order(o) for o in orders]\n",
+   "rationale": "Reverts the guilty commit's hunk so the code goes back to its previous, faster form. [offline stand-in fixer \u2014 not Nemotron; the result is still verified by a real sandbox re-run]",
+   "score_after": 9.761,
+   "resolved": true,
+   "error": null
+  }
+ ],
+ "fix": {
+  "patch_diff": "--- a/app/summary.py\n+++ b/app/summary.py\n@@ -1,9 +1,16 @@\n+from collections import defaultdict\n+\n from .serialize import serialize_order\n \n \n def get_order_summary(db, customer_id):\n     orders = db.query(\"orders\", customer_id=customer_id)\n+    order_ids = [o[\"id\"] for o in orders]\n+    items = db.query_in(\"line_items\", \"order_id\", order_ids)\n+    items_by_order = defaultdict(list)\n+    for item in items:\n+        items_by_order[item[\"order_id\"]].append(item)\n     for order in orders:\n-        order[\"line_items\"] = db.query(\"line_items\", order_id=order[\"id\"])\n+        order[\"line_items\"] = items_by_order.get(order[\"id\"], [])\n \n     return [serialize_order(o) for o in orders]\n",
+  "verified": true,
+  "before_score": 9.896,
+  "after_score": 9.761
+ },
+ "final_result": "resolved",
+ "error": null,
+ "created_at": "2026-09-30T11:08:18.598043+00:00",
+ "updated_at": "2026-09-30T11:08:25.591760+00:00",
+ "stage_times": {
+  "bisecting": "2026-09-30T11:08:18.598749+00:00",
+  "diagnosing": "2026-09-30T11:08:25.440505+00:00",
+  "fixing": "2026-09-30T11:08:25.450750+00:00",
+  "done": "2026-09-30T11:08:25.591757+00:00"
+ },
+ "server_time": "2026-09-30T11:08:25.595257+00:00",
+ "mode": "offline",
+ "commits": [
+  {
+   "index": 0,
+   "sha": "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+   "subject": "bench: add order-summary benchmark",
+   "author": "Mei Lin",
+   "date": "2026-09-08T16:53:20+00:00"
+  },
+  {
+   "index": 1,
+   "sha": "c9dad2a5b6a48e4ef7cd7d1af118d58d49827441",
+   "subject": "docs: describe the summary endpoint",
+   "author": "Sam Okafor",
+   "date": "2026-09-09T04:53:20+00:00"
+  },
+  {
+   "index": 2,
+   "sha": "f2f790ff455307c62baf4f05c40ceb5cd8559bc2",
+   "subject": "chore: add .gitignore",
+   "author": "Ana Ruiz",
+   "date": "2026-09-09T16:53:20+00:00"
+  },
+  {
+   "index": 3,
+   "sha": "edba20fb7e3c75d92eaa848dab1164ea3225b2c1",
+   "subject": "style: tidy serialize_order",
+   "author": "Dev Patel",
+   "date": "2026-09-10T04:53:20+00:00"
+  },
+  {
+   "index": 4,
+   "sha": "3064b1b4414afcf1742f1f40b81292baf04e1919",
+   "subject": "docs: document benchmark usage",
+   "author": "Mei Lin",
+   "date": "2026-09-10T16:53:20+00:00"
+  },
+  {
+   "index": 5,
+   "sha": "29beac57e5576b18fb11b0d1c7c9244bda57d537",
+   "subject": "chore: pin python version note",
+   "author": "Sam Okafor",
+   "date": "2026-09-11T04:53:20+00:00"
+  },
+  {
+   "index": 6,
+   "sha": "6776abf193a30eca9e3410026847d0e62b4356b3",
+   "subject": "feat: include item count in summary",
+   "author": "Ana Ruiz",
+   "date": "2026-09-11T16:53:20+00:00"
+  },
+  {
+   "index": 7,
+   "sha": "26f047a7863417b169c8cf88aa25fe46880cc2a1",
+   "subject": "test: add smoke test placeholder",
+   "author": "Dev Patel",
+   "date": "2026-09-12T04:53:20+00:00"
+  },
+  {
+   "index": 8,
+   "sha": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "subject": "refactor: simplify order summary loading",
+   "author": "Mei Lin",
+   "date": "2026-09-12T16:53:20+00:00"
+  },
+  {
+   "index": 9,
+   "sha": "2014f67887be7c5d1d334d34380961c4669ab80e",
+   "subject": "docs: changelog for 0.2",
+   "author": "Sam Okafor",
+   "date": "2026-09-13T04:53:20+00:00"
+  },
+  {
+   "index": 10,
+   "sha": "879559e0f5b3c9ed41d0a6431cf993cdcbd25eab",
+   "subject": "chore: bump version metadata",
+   "author": "Ana Ruiz",
+   "date": "2026-09-13T16:53:20+00:00"
+  },
+  {
+   "index": 11,
+   "sha": "35e352d01439ddba061b709dead76fa5e4c40792",
+   "subject": "feat: expose status in summary",
+   "author": "Dev Patel",
+   "date": "2026-09-14T04:53:20+00:00"
+  },
+  {
+   "index": 12,
+   "sha": "9278930cb30a02490ecf70c09cd5dfc0def20996",
+   "subject": "docs: clarify readme",
+   "author": "Mei Lin",
+   "date": "2026-09-14T16:53:20+00:00"
+  },
+  {
+   "index": 13,
+   "sha": "b5a30d8157b67cb5dae17729253612ff2f640d1f",
+   "subject": "test: second smoke test",
+   "author": "Sam Okafor",
+   "date": "2026-09-15T04:53:20+00:00"
+  },
+  {
+   "index": 14,
+   "sha": "2a7c52471909de49e89a925b62b60584027fc336",
+   "subject": "chore: editorconfig",
+   "author": "Ana Ruiz",
+   "date": "2026-09-15T16:53:20+00:00"
+  },
+  {
+   "index": 15,
+   "sha": "76b7f22a5917ca5e23fab41463819517b867cddc",
+   "subject": "style: trailing newline in db",
+   "author": "Dev Patel",
+   "date": "2026-09-16T04:53:20+00:00"
+  },
+  {
+   "index": 16,
+   "sha": "1e1d072fc0d0ec82fc3c672a0b2cf8942467d836",
+   "subject": "docs: contributing note",
+   "author": "Mei Lin",
+   "date": "2026-09-16T16:53:20+00:00"
+  },
+  {
+   "index": 17,
+   "sha": "fffa4826f3c9bbe29d830a4e18113a6f31dac965",
+   "subject": "chore: license header note",
+   "author": "Sam Okafor",
+   "date": "2026-09-17T04:53:20+00:00"
+  },
+  {
+   "index": 18,
+   "sha": "2dad833025fee2a4c2021e3a053df4d4e4aacac8",
+   "subject": "docs: update changelog",
+   "author": "Ana Ruiz",
+   "date": "2026-09-17T16:53:20+00:00"
+  },
+  {
+   "index": 19,
+   "sha": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+   "subject": "chore: release 0.3",
+   "author": "Dev Patel",
+   "date": "2026-09-18T04:53:20+00:00"
+  }
+ ],
+ "probes": [
+  {
+   "step": 0,
+   "commit": "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+   "index": 0,
+   "role": "baseline",
+   "raw_scores": [
+    9.713,
+    9.925,
+    9.816,
+    9.896,
+    9.992
+   ],
+   "median_score": 9.896,
+   "pct_change": 0.0,
+   "verdict": "baseline",
+   "rounds": 0,
+   "nano": [],
+   "window": [
+    0,
+    19
+   ],
+   "timestamp": "2026-09-30T11:08:18.744171+00:00",
+   "wall_s": 0.136
+  },
+  {
+   "step": 1,
+   "commit": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+   "index": 19,
+   "role": "endpoint",
+   "raw_scores": [
+    301.917,
+    305.704,
+    303.071,
+    301.413,
+    303.162
+   ],
+   "median_score": 303.071,
+   "pct_change": 2962.5606305578012,
+   "verdict": "regressed",
+   "rounds": 1,
+   "nano": [
+    {
+     "model_id": "offline-stub/nano",
+     "latency_s": 0.0,
+     "nano_verdict": "regressed",
+     "final_verdict": "regressed",
+     "overridden": false,
+     "n_scores": 5,
+     "offline": true,
+     "usage": {}
+    }
+   ],
+   "window": null,
+   "timestamp": "2026-09-30T11:08:20.835856+00:00",
+   "wall_s": 2.091
+  },
+  {
+   "step": 2,
+   "commit": "2014f67887be7c5d1d334d34380961c4669ab80e",
+   "index": 9,
+   "role": "bisect",
+   "raw_scores": [
+    305.009,
+    307.989,
+    302.627,
+    303.058,
+    301.828
+   ],
+   "median_score": 303.058,
+   "pct_change": 2962.4292643492313,
+   "verdict": "regressed",
+   "rounds": 1,
+   "nano": [
+    {
+     "model_id": "offline-stub/nano",
+     "latency_s": 0.0,
+     "nano_verdict": "regressed",
+     "final_verdict": "regressed",
+     "overridden": false,
+     "n_scores": 5,
+     "offline": true,
+     "usage": {}
+    }
+   ],
+   "window": null,
+   "timestamp": "2026-09-30T11:08:22.935392+00:00",
+   "wall_s": 2.099
+  },
+  {
+   "step": 3,
+   "commit": "3064b1b4414afcf1742f1f40b81292baf04e1919",
+   "index": 4,
+   "role": "bisect",
+   "raw_scores": [
+    9.713,
+    9.949,
+    10.215,
+    9.965,
+    10.005
+   ],
+   "median_score": 9.965,
+   "pct_change": 0.6972514147130058,
+   "verdict": "clean",
+   "rounds": 1,
+   "nano": [
+    {
+     "model_id": "offline-stub/nano",
+     "latency_s": 0.0,
+     "nano_verdict": "clean",
+     "final_verdict": "clean",
+     "overridden": false,
+     "n_scores": 5,
+     "offline": true,
+     "usage": {}
+    }
+   ],
+   "window": null,
+   "timestamp": "2026-09-30T11:08:23.071612+00:00",
+   "wall_s": 0.135
+  },
+  {
+   "step": 4,
+   "commit": "6776abf193a30eca9e3410026847d0e62b4356b3",
+   "index": 6,
+   "role": "bisect",
+   "raw_scores": [
+    9.868,
+    10.144,
+    9.865,
+    10.129,
+    9.735
+   ],
+   "median_score": 9.868,
+   "pct_change": -0.28294260307195296,
+   "verdict": "clean",
+   "rounds": 1,
+   "nano": [
+    {
+     "model_id": "offline-stub/nano",
+     "latency_s": 0.0,
+     "nano_verdict": "clean",
+     "final_verdict": "clean",
+     "overridden": false,
+     "n_scores": 5,
+     "offline": true,
+     "usage": {}
+    }
+   ],
+   "window": null,
+   "timestamp": "2026-09-30T11:08:23.209867+00:00",
+   "wall_s": 0.137
+  },
+  {
+   "step": 5,
+   "commit": "26f047a7863417b169c8cf88aa25fe46880cc2a1",
+   "index": 7,
+   "role": "bisect",
+   "raw_scores": [
+    10.022,
+    9.929,
+    9.68,
+    9.706,
+    9.918
+   ],
+   "median_score": 9.918,
+   "pct_change": 0.22231204527080098,
+   "verdict": "clean",
+   "rounds": 1,
+   "nano": [
+    {
+     "model_id": "offline-stub/nano",
+     "latency_s": 0.0,
+     "nano_verdict": "clean",
+     "final_verdict": "clean",
+     "overridden": false,
+     "n_scores": 5,
+     "offline": true,
+     "usage": {}
+    }
+   ],
+   "window": null,
+   "timestamp": "2026-09-30T11:08:23.346160+00:00",
+   "wall_s": 0.135
+  },
+  {
+   "step": 6,
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "index": 8,
+   "role": "bisect",
+   "raw_scores": [
+    303.545,
+    300.058,
+    302.383,
+    302.872,
+    302.501
+   ],
+   "median_score": 302.501,
+   "pct_change": 2956.800727566693,
+   "verdict": "regressed",
+   "rounds": 1,
+   "nano": [
+    {
+     "model_id": "offline-stub/nano",
+     "latency_s": 0.0,
+     "nano_verdict": "regressed",
+     "final_verdict": "regressed",
+     "overridden": false,
+     "n_scores": 5,
+     "offline": true,
+     "usage": {}
+    }
+   ],
+   "window": null,
+   "timestamp": "2026-09-30T11:08:25.438845+00:00",
+   "wall_s": 2.092
+  }
+ ],
+ "baseline_score": 9.896,
+ "threshold_pct": 15.0,
+ "n_runs": 5,
+ "window": [
+  8,
+  7
+ ],
+ "cancel_requested": false,
+ "metrics": {
+  "models": {
+   "nano": {
+    "role": "nano",
+    "model_id": "offline-stub/nano",
+    "calls": 6,
+    "latency_s": 0.0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "retries": 0,
+    "offline": true,
+    "total_tokens": 0,
+    "avg_latency_s": 0.0
+   },
+   "ultra": {
+    "role": "ultra",
+    "model_id": "offline-stub/ultra",
+    "calls": 2,
+    "latency_s": 0.0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "retries": 0,
+    "offline": true,
+    "total_tokens": 0,
+    "avg_latency_s": 0.0
+   }
+  },
+  "sandbox": {
+   "probes": 7,
+   "runs": 40,
+   "patched_runs": 5,
+   "instances": 0,
+   "run_wall_s": 6.878
+  },
+  "tavily": {
+   "searches": 0,
+   "sources": 0
+  },
+  "git_calls": 5,
+  "events": 60
+ },
+ "label": "Bundled demo \u00b7 orders-service"
+}

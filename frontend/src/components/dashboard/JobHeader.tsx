@@ -2,7 +2,9 @@
 
 // FILE: frontend/src/components/dashboard/JobHeader.tsx
 
+import { useState } from "react";
 import type { JobState } from "@/lib/types";
+import { cancelJob } from "@/lib/api";
 import { formatDuration, repoDisplayName, shortSha, truncateMiddle } from "@/lib/format";
 import { LiveDot, Pill } from "@/components/ui";
 import { CopyMetaTag } from "@/components/CopyMetaTag";
@@ -15,6 +17,7 @@ const STATUS_VARIANT: Record<JobState["status"], "neutral" | "iris" | "butter" |
   fixing: "iris",
   done: "neutral",
   failed: "unresolved",
+  cancelled: "butter",
 };
 
 function statusLabel(job: JobState): string {
@@ -58,14 +61,35 @@ export function JobHeader({
   clockOffsetMs?: number;
 }) {
   const variant = job.status === "done" && job.final_result === "resolved" ? "resolved" : STATUS_VARIANT[job.status];
-  const isLive = job.status !== "done" && job.status !== "failed";
+  const isLive = isJobLive(job);
+  const [cancelState, setCancelState] = useState<"idle" | "sending" | "error">("idle");
+  const stopping = job.cancel_requested || cancelState === "sending";
+
+  async function handleCancel() {
+    setCancelState("sending");
+    try {
+      await cancelJob(job.job_id);
+      // The poll picks up `cancel_requested` / the final "cancelled" status.
+    } catch {
+      setCancelState("error");
+      setTimeout(() => setCancelState("idle"), 2500);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <LiveDot variant={variant === "unresolved" ? "unresolved" : "iris"} live={isLive} size="md" />
-          <h1 className="truncate text-xl font-medium tracking-tight text-ink">{repoDisplayName(job.repo_url)}</h1>
+          <h1 className="truncate text-xl font-medium tracking-tight text-ink">{job.label ?? repoDisplayName(job.repo_url)}</h1>
+          {job.mode === "offline" && (
+            <span
+              className="shrink-0 rounded bg-butter/30 px-1.5 py-0.5 text-[10px] font-medium text-iris-700"
+              title="Benchmarks in this run are real measurements. The model reasoning came from Culprit's deterministic offline stand-in, not Nemotron."
+            >
+              offline stand-in models
+            </span>
+          )}
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <CopyMetaTag copyText={job.benchmark_command} className="max-w-[36ch]">
@@ -90,6 +114,17 @@ export function JobHeader({
           </span>
         )}
         <ElapsedClock job={job} clockOffsetMs={clockOffsetMs} />
+        {isLive && (
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={stopping}
+            className="rounded-md border border-line px-2.5 py-1 text-xs text-muted transition-colors hover:border-unresolved/50 hover:text-unresolved disabled:cursor-default disabled:opacity-60"
+            title="Stops at the next checkpoint (between probes, run rounds, or fix attempts) — never mid-benchmark"
+          >
+            {cancelState === "error" ? "Couldn't cancel" : stopping ? "Stopping…" : "Cancel"}
+          </button>
+        )}
         <Pill variant={variant}>{statusLabel(job)}</Pill>
       </div>
     </div>

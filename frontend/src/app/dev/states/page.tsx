@@ -28,7 +28,7 @@ export default function StatesPage() {
       <div className="sticky top-[57px] z-10 border-b border-line bg-paper/95 backdrop-blur">
         {/* One scrolling row on phones (a wrapped, sticky 5-row bar covered ~40% of the
             screen); wraps normally from `sm` up. */}
-        <div className="mx-auto flex max-w-6xl items-center gap-1.5 overflow-x-auto px-4 py-3 sm:flex-wrap sm:px-6">
+        <div className="mx-auto flex max-w-7xl items-center gap-1.5 overflow-x-auto px-4 py-3 sm:flex-wrap sm:px-6">
           <span className="mr-1 shrink-0 whitespace-nowrap font-mono text-[11px] text-muted/70">State reference</span>
           {FIXTURES.map((fixture) => (
             <button
@@ -45,7 +45,7 @@ export default function StatesPage() {
           ))}
         </div>
       </div>
-      <p className="mx-auto mt-4 max-w-6xl px-6 text-xs text-muted">{selected.description}</p>
+      <p className="mx-auto mt-4 max-w-7xl px-6 text-xs text-muted">{selected.description}</p>
       <JobDashboard key={selected.key} job={selected.job} clockOffsetMs={clockOffsetMs} />
     </div>
   );

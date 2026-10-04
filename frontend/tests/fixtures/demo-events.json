@@ -1,0 +1,2164 @@
+[
+ {
+  "seq": 1,
+  "ts": "2026-09-30T11:08:18.598+00:00",
+  "kind": "job.start",
+  "source": "system",
+  "message": "job 8eabef858889 accepted",
+  "data": {
+   "job_id": "8eabef858889",
+   "repo": "/tmp/tmpb0nf7n62/demo/orders-service",
+   "benchmark": "python bench.py",
+   "threshold_pct": 15.0,
+   "n_runs": 5,
+   "mode": "offline",
+   "sandbox": "local"
+  }
+ },
+ {
+  "seq": 2,
+  "ts": "2026-09-30T11:08:18.598+00:00",
+  "kind": "stage.start",
+  "source": "system",
+  "message": "stage 1/3 \u00b7 bisect",
+  "data": {
+   "stage": "bisecting"
+  }
+ },
+ {
+  "seq": 3,
+  "ts": "2026-09-30T11:08:18.600+00:00",
+  "kind": "git.call",
+  "source": "git",
+  "message": "$ git rev-parse --verify --quiet 4798bbe6bd86d6f519efecd8237acf735b9dac9c^{commit}",
+  "data": {
+   "cmd": [
+    "git",
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    "4798bbe6bd86d6f519efecd8237acf735b9dac9c^{commit}"
+   ],
+   "dur_s": 0.001,
+   "ok": true
+  }
+ },
+ {
+  "seq": 4,
+  "ts": "2026-09-30T11:08:18.602+00:00",
+  "kind": "git.call",
+  "source": "git",
+  "message": "$ git rev-parse --verify --quiet e0c27bf5de90b84336fb6bbd8584008e614dcbba^{commit}",
+  "data": {
+   "cmd": [
+    "git",
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    "e0c27bf5de90b84336fb6bbd8584008e614dcbba^{commit}"
+   ],
+   "dur_s": 0.002,
+   "ok": true
+  }
+ },
+ {
+  "seq": 5,
+  "ts": "2026-09-30T11:08:18.603+00:00",
+  "kind": "git.range",
+  "source": "git",
+  "message": "commit range: 4798bbe6bd..e0c27bf5de",
+  "data": {
+   "start": "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+   "end": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+   "auto": false
+  }
+ },
+ {
+  "seq": 6,
+  "ts": "2026-09-30T11:08:18.604+00:00",
+  "kind": "sandbox.ready",
+  "source": "sandbox",
+  "message": "local sandbox \u2014 every commit runs in a fresh git worktree with a lockfile-cached venv",
+  "data": {
+   "backend": "local"
+  }
+ },
+ {
+  "seq": 7,
+  "ts": "2026-09-30T11:08:18.608+00:00",
+  "kind": "bisect.plan",
+  "source": "bisect",
+  "message": "19 commits to search \u2014 at most ~7 probes instead of 20 linear runs",
+  "data": {
+   "n_commits": 20,
+   "max_probes": 7,
+   "linear_runs": 20,
+   "threshold_pct": 15.0,
+   "n_runs": 5,
+   "start": "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+   "end": "e0c27bf5de90b84336fb6bbd8584008e614dcbba"
+  }
+ },
+ {
+  "seq": 8,
+  "ts": "2026-09-30T11:08:18.608+00:00",
+  "kind": "probe.start",
+  "source": "bisect",
+  "message": "probe 0 \u00b7 baseline 4798bbe6",
+  "data": {
+   "span": "0c10bab5",
+   "step": 0,
+   "commit": "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+   "index": 0,
+   "role": "baseline"
+  }
+ },
+ {
+  "seq": 9,
+  "ts": "2026-09-30T11:08:18.615+00:00",
+  "kind": "sandbox.checkout",
+  "source": "sandbox",
+  "message": "checked out 4798bbe6",
+  "data": {
+   "step": 0,
+   "index": 0,
+   "role": "baseline",
+   "commit": "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+   "dur_s": 0.006,
+   "backend": "local-worktree"
+  }
+ },
+ {
+  "seq": 10,
+  "ts": "2026-09-30T11:08:18.615+00:00",
+  "kind": "sandbox.deps",
+  "source": "sandbox",
+  "message": "dependencies: cache hit",
+  "data": {
+   "step": 0,
+   "index": 0,
+   "role": "baseline",
+   "commit": "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+   "dur_s": 0.0,
+   "cache_hit": true,
+   "lock_hash": "9cd44e938109fdd4",
+   "lockfile": "requirements.txt"
+  }
+ },
+ {
+  "seq": 11,
+  "ts": "2026-09-30T11:08:18.643+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 1/5 \u2192 9.713 ms",
+  "data": {
+   "step": 0,
+   "index": 0,
+   "role": "baseline",
+   "commit": "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+   "run": 1,
+   "n_runs": 5,
+   "score": 9.713,
+   "wall_s": 0.028,
+   "patched": false
+  }
+ },
+ {
+  "seq": 12,
+  "ts": "2026-09-30T11:08:18.668+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 2/5 \u2192 9.925 ms",
+  "data": {
+   "step": 0,
+   "index": 0,
+   "role": "baseline",
+   "commit": "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+   "run": 2,
+   "n_runs": 5,
+   "score": 9.925,
+   "wall_s": 0.025,
+   "patched": false
+  }
+ },
+ {
+  "seq": 13,
+  "ts": "2026-09-30T11:08:18.692+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 3/5 \u2192 9.816 ms",
+  "data": {
+   "step": 0,
+   "index": 0,
+   "role": "baseline",
+   "commit": "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+   "run": 3,
+   "n_runs": 5,
+   "score": 9.816,
+   "wall_s": 0.025,
+   "patched": false
+  }
+ },
+ {
+  "seq": 14,
+  "ts": "2026-09-30T11:08:18.716+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 4/5 \u2192 9.896 ms",
+  "data": {
+   "step": 0,
+   "index": 0,
+   "role": "baseline",
+   "commit": "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+   "run": 4,
+   "n_runs": 5,
+   "score": 9.896,
+   "wall_s": 0.023,
+   "patched": false
+  }
+ },
+ {
+  "seq": 15,
+  "ts": "2026-09-30T11:08:18.741+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 5/5 \u2192 9.992 ms",
+  "data": {
+   "step": 0,
+   "index": 0,
+   "role": "baseline",
+   "commit": "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+   "run": 5,
+   "n_runs": 5,
+   "score": 9.992,
+   "wall_s": 0.025,
+   "patched": false
+  }
+ },
+ {
+  "seq": 16,
+  "ts": "2026-09-30T11:08:18.744+00:00",
+  "kind": "probe.end",
+  "source": "bisect",
+  "message": "baseline median 9.896 ms",
+  "data": {
+   "span": "0c10bab5",
+   "dur_s": 0.136,
+   "commit": "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+   "index": 0,
+   "role": "baseline",
+   "verdict": "baseline",
+   "median": 9.896,
+   "raw_scores": [
+    9.713,
+    9.925,
+    9.816,
+    9.896,
+    9.992
+   ],
+   "pct_change": 0.0,
+   "threshold_pct": 15.0,
+   "step": 0
+  }
+ },
+ {
+  "seq": 17,
+  "ts": "2026-09-30T11:08:18.744+00:00",
+  "kind": "probe.start",
+  "source": "bisect",
+  "message": "probe 1 \u00b7 end of range e0c27bf5",
+  "data": {
+   "span": "78d50492",
+   "step": 1,
+   "commit": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+   "index": 19,
+   "role": "endpoint"
+  }
+ },
+ {
+  "seq": 18,
+  "ts": "2026-09-30T11:08:18.751+00:00",
+  "kind": "sandbox.checkout",
+  "source": "sandbox",
+  "message": "checked out e0c27bf5",
+  "data": {
+   "step": 1,
+   "index": 19,
+   "role": "endpoint",
+   "commit": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+   "dur_s": 0.006,
+   "backend": "local-worktree"
+  }
+ },
+ {
+  "seq": 19,
+  "ts": "2026-09-30T11:08:18.751+00:00",
+  "kind": "sandbox.deps",
+  "source": "sandbox",
+  "message": "dependencies: cache hit",
+  "data": {
+   "step": 1,
+   "index": 19,
+   "role": "endpoint",
+   "commit": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+   "dur_s": 0.0,
+   "cache_hit": true,
+   "lock_hash": "ab29da41cadc2da4",
+   "lockfile": "requirements.txt"
+  }
+ },
+ {
+  "seq": 20,
+  "ts": "2026-09-30T11:08:19.167+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 1/5 \u2192 301.917 ms",
+  "data": {
+   "step": 1,
+   "index": 19,
+   "role": "endpoint",
+   "commit": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+   "run": 1,
+   "n_runs": 5,
+   "score": 301.917,
+   "wall_s": 0.416,
+   "patched": false
+  }
+ },
+ {
+  "seq": 21,
+  "ts": "2026-09-30T11:08:19.585+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 2/5 \u2192 305.704 ms",
+  "data": {
+   "step": 1,
+   "index": 19,
+   "role": "endpoint",
+   "commit": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+   "run": 2,
+   "n_runs": 5,
+   "score": 305.704,
+   "wall_s": 0.418,
+   "patched": false
+  }
+ },
+ {
+  "seq": 22,
+  "ts": "2026-09-30T11:08:20.002+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 3/5 \u2192 303.071 ms",
+  "data": {
+   "step": 1,
+   "index": 19,
+   "role": "endpoint",
+   "commit": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+   "run": 3,
+   "n_runs": 5,
+   "score": 303.071,
+   "wall_s": 0.416,
+   "patched": false
+  }
+ },
+ {
+  "seq": 23,
+  "ts": "2026-09-30T11:08:20.416+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 4/5 \u2192 301.413 ms",
+  "data": {
+   "step": 1,
+   "index": 19,
+   "role": "endpoint",
+   "commit": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+   "run": 4,
+   "n_runs": 5,
+   "score": 301.413,
+   "wall_s": 0.415,
+   "patched": false
+  }
+ },
+ {
+  "seq": 24,
+  "ts": "2026-09-30T11:08:20.831+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 5/5 \u2192 303.162 ms",
+  "data": {
+   "step": 1,
+   "index": 19,
+   "role": "endpoint",
+   "commit": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+   "run": 5,
+   "n_runs": 5,
+   "score": 303.162,
+   "wall_s": 0.415,
+   "patched": false
+  }
+ },
+ {
+  "seq": 25,
+  "ts": "2026-09-30T11:08:20.835+00:00",
+  "kind": "model.start",
+  "source": "nano",
+  "message": "nano \u00b7 bisect:candidate=e0c27bf5de",
+  "data": {
+   "span": "52702eba",
+   "role": "nano",
+   "model_id": "offline-stub/nano",
+   "step": "bisect:candidate=e0c27bf5de",
+   "temperature": 0.2,
+   "request": {
+    "system": "You are a control-flow decision engine for a performance bisection tool.\nYou will be given a candidate commit's benchmark scores (multiple runs),\na baseline score, and a regression threshold percentage.\n\nDecide:\n1. Whether this candidate commit is \"regressed\" (median score is worse than\n   baseline by more than the threshold), \"clean\", or \"inconclusive\" (noise\n   too high to tell \u2014 e.g. run-to-run variance exceeds the threshold itself).\n2. If inconclusive, recommend how many additional runs to collect.\n\nReturn ONLY JSON matching this schema:\n{\n  \"verdict\": \"regressed\" | \"clean\" | \"inconclusive\",\n  \"median_score\": <number>,\n  \"pct_change_from_baseline\": <number>,\n  \"additional_runs_needed\": <integer, 0 if not inconclusive>\n}",
+    "payload": {
+     "commit_range": [
+      "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+      "e0c27bf5de90b84336fb6bbd8584008e614dcbba"
+     ],
+     "candidate_sha": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+     "candidate_scores": [
+      301.917,
+      305.704,
+      303.071,
+      301.413,
+      303.162
+     ],
+     "baseline_score": 9.896,
+     "regression_threshold_pct": 15.0
+    }
+   },
+   "offline": true
+  }
+ },
+ {
+  "seq": 26,
+  "ts": "2026-09-30T11:08:20.835+00:00",
+  "kind": "model.end",
+  "source": "nano",
+  "message": "nano responded",
+  "data": {
+   "span": "52702eba",
+   "dur_s": 0.001,
+   "role": "nano",
+   "model_id": "offline-stub/nano",
+   "latency_s": 0.0001,
+   "attempts": 1,
+   "usage": {},
+   "response": "{\"verdict\": \"regressed\", \"median_score\": 303.071, \"pct_change_from_baseline\": 2962.5606305578012, \"additional_runs_needed\": 0}",
+   "offline": true
+  }
+ },
+ {
+  "seq": 27,
+  "ts": "2026-09-30T11:08:20.835+00:00",
+  "kind": "nano.verdict",
+  "source": "nano",
+  "message": "Nano verdict: regressed",
+  "data": {
+   "commit": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+   "nano_verdict": "regressed",
+   "final_verdict": "regressed",
+   "overridden": false,
+   "median": 303.071,
+   "pct_change": 2962.5606305578012,
+   "additional_runs": 0,
+   "n_scores": 5
+  }
+ },
+ {
+  "seq": 28,
+  "ts": "2026-09-30T11:08:20.836+00:00",
+  "kind": "probe.end",
+  "source": "bisect",
+  "message": "regressed \u00b7 median 303.071 ms (+2962.6%)",
+  "data": {
+   "span": "78d50492",
+   "dur_s": 2.091,
+   "commit": "e0c27bf5de90b84336fb6bbd8584008e614dcbba",
+   "index": 19,
+   "role": "endpoint",
+   "verdict": "regressed",
+   "median": 303.071,
+   "raw_scores": [
+    301.917,
+    305.704,
+    303.071,
+    301.413,
+    303.162
+   ],
+   "pct_change": 2962.5606305578012,
+   "threshold_pct": 15.0,
+   "rounds": 1,
+   "step": 1
+  }
+ },
+ {
+  "seq": 29,
+  "ts": "2026-09-30T11:08:20.836+00:00",
+  "kind": "probe.start",
+  "source": "bisect",
+  "message": "probe 2 \u00b7 midpoint 2014f678",
+  "data": {
+   "span": "6926c5b1",
+   "step": 2,
+   "commit": "2014f67887be7c5d1d334d34380961c4669ab80e",
+   "index": 9,
+   "role": "bisect"
+  }
+ },
+ {
+  "seq": 30,
+  "ts": "2026-09-30T11:08:20.843+00:00",
+  "kind": "sandbox.checkout",
+  "source": "sandbox",
+  "message": "checked out 2014f678",
+  "data": {
+   "step": 2,
+   "index": 9,
+   "role": "bisect",
+   "commit": "2014f67887be7c5d1d334d34380961c4669ab80e",
+   "dur_s": 0.006,
+   "backend": "local-worktree"
+  }
+ },
+ {
+  "seq": 31,
+  "ts": "2026-09-30T11:08:20.843+00:00",
+  "kind": "sandbox.deps",
+  "source": "sandbox",
+  "message": "dependencies: cache hit",
+  "data": {
+   "step": 2,
+   "index": 9,
+   "role": "bisect",
+   "commit": "2014f67887be7c5d1d334d34380961c4669ab80e",
+   "dur_s": 0.0,
+   "cache_hit": true,
+   "lock_hash": "ab29da41cadc2da4",
+   "lockfile": "requirements.txt"
+  }
+ },
+ {
+  "seq": 32,
+  "ts": "2026-09-30T11:08:21.263+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 1/5 \u2192 305.009 ms",
+  "data": {
+   "step": 2,
+   "index": 9,
+   "role": "bisect",
+   "commit": "2014f67887be7c5d1d334d34380961c4669ab80e",
+   "run": 1,
+   "n_runs": 5,
+   "score": 305.009,
+   "wall_s": 0.42,
+   "patched": false
+  }
+ },
+ {
+  "seq": 33,
+  "ts": "2026-09-30T11:08:21.684+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 2/5 \u2192 307.989 ms",
+  "data": {
+   "step": 2,
+   "index": 9,
+   "role": "bisect",
+   "commit": "2014f67887be7c5d1d334d34380961c4669ab80e",
+   "run": 2,
+   "n_runs": 5,
+   "score": 307.989,
+   "wall_s": 0.421,
+   "patched": false
+  }
+ },
+ {
+  "seq": 34,
+  "ts": "2026-09-30T11:08:22.099+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 3/5 \u2192 302.627 ms",
+  "data": {
+   "step": 2,
+   "index": 9,
+   "role": "bisect",
+   "commit": "2014f67887be7c5d1d334d34380961c4669ab80e",
+   "run": 3,
+   "n_runs": 5,
+   "score": 302.627,
+   "wall_s": 0.415,
+   "patched": false
+  }
+ },
+ {
+  "seq": 35,
+  "ts": "2026-09-30T11:08:22.516+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 4/5 \u2192 303.058 ms",
+  "data": {
+   "step": 2,
+   "index": 9,
+   "role": "bisect",
+   "commit": "2014f67887be7c5d1d334d34380961c4669ab80e",
+   "run": 4,
+   "n_runs": 5,
+   "score": 303.058,
+   "wall_s": 0.417,
+   "patched": false
+  }
+ },
+ {
+  "seq": 36,
+  "ts": "2026-09-30T11:08:22.931+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 5/5 \u2192 301.828 ms",
+  "data": {
+   "step": 2,
+   "index": 9,
+   "role": "bisect",
+   "commit": "2014f67887be7c5d1d334d34380961c4669ab80e",
+   "run": 5,
+   "n_runs": 5,
+   "score": 301.828,
+   "wall_s": 0.414,
+   "patched": false
+  }
+ },
+ {
+  "seq": 37,
+  "ts": "2026-09-30T11:08:22.935+00:00",
+  "kind": "model.start",
+  "source": "nano",
+  "message": "nano \u00b7 bisect:candidate=2014f67887",
+  "data": {
+   "span": "b1ccba06",
+   "role": "nano",
+   "model_id": "offline-stub/nano",
+   "step": "bisect:candidate=2014f67887",
+   "temperature": 0.2,
+   "request": {
+    "system": "You are a control-flow decision engine for a performance bisection tool.\nYou will be given a candidate commit's benchmark scores (multiple runs),\na baseline score, and a regression threshold percentage.\n\nDecide:\n1. Whether this candidate commit is \"regressed\" (median score is worse than\n   baseline by more than the threshold), \"clean\", or \"inconclusive\" (noise\n   too high to tell \u2014 e.g. run-to-run variance exceeds the threshold itself).\n2. If inconclusive, recommend how many additional runs to collect.\n\nReturn ONLY JSON matching this schema:\n{\n  \"verdict\": \"regressed\" | \"clean\" | \"inconclusive\",\n  \"median_score\": <number>,\n  \"pct_change_from_baseline\": <number>,\n  \"additional_runs_needed\": <integer, 0 if not inconclusive>\n}",
+    "payload": {
+     "commit_range": [
+      "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+      "e0c27bf5de90b84336fb6bbd8584008e614dcbba"
+     ],
+     "candidate_sha": "2014f67887be7c5d1d334d34380961c4669ab80e",
+     "candidate_scores": [
+      305.009,
+      307.989,
+      302.627,
+      303.058,
+      301.828
+     ],
+     "baseline_score": 9.896,
+     "regression_threshold_pct": 15.0
+    }
+   },
+   "offline": true
+  }
+ },
+ {
+  "seq": 38,
+  "ts": "2026-09-30T11:08:22.935+00:00",
+  "kind": "model.end",
+  "source": "nano",
+  "message": "nano responded",
+  "data": {
+   "span": "b1ccba06",
+   "dur_s": 0.0,
+   "role": "nano",
+   "model_id": "offline-stub/nano",
+   "latency_s": 0.0001,
+   "attempts": 1,
+   "usage": {},
+   "response": "{\"verdict\": \"regressed\", \"median_score\": 303.058, \"pct_change_from_baseline\": 2962.4292643492313, \"additional_runs_needed\": 0}",
+   "offline": true
+  }
+ },
+ {
+  "seq": 39,
+  "ts": "2026-09-30T11:08:22.935+00:00",
+  "kind": "nano.verdict",
+  "source": "nano",
+  "message": "Nano verdict: regressed",
+  "data": {
+   "commit": "2014f67887be7c5d1d334d34380961c4669ab80e",
+   "nano_verdict": "regressed",
+   "final_verdict": "regressed",
+   "overridden": false,
+   "median": 303.058,
+   "pct_change": 2962.4292643492313,
+   "additional_runs": 0,
+   "n_scores": 5
+  }
+ },
+ {
+  "seq": 40,
+  "ts": "2026-09-30T11:08:22.935+00:00",
+  "kind": "probe.end",
+  "source": "bisect",
+  "message": "regressed \u00b7 median 303.058 ms (+2962.4%)",
+  "data": {
+   "span": "6926c5b1",
+   "dur_s": 2.099,
+   "commit": "2014f67887be7c5d1d334d34380961c4669ab80e",
+   "index": 9,
+   "role": "bisect",
+   "verdict": "regressed",
+   "median": 303.058,
+   "raw_scores": [
+    305.009,
+    307.989,
+    302.627,
+    303.058,
+    301.828
+   ],
+   "pct_change": 2962.4292643492313,
+   "threshold_pct": 15.0,
+   "rounds": 1,
+   "step": 2
+  }
+ },
+ {
+  "seq": 41,
+  "ts": "2026-09-30T11:08:22.935+00:00",
+  "kind": "bisect.window",
+  "source": "bisect",
+  "message": "guilty commit is at or before 2014f678 \u2014 window now 8 commit(s)",
+  "data": {
+   "lo": 1,
+   "hi": 8,
+   "mid": 9,
+   "verdict": "regressed"
+  }
+ },
+ {
+  "seq": 42,
+  "ts": "2026-09-30T11:08:22.936+00:00",
+  "kind": "probe.start",
+  "source": "bisect",
+  "message": "probe 3 \u00b7 midpoint 3064b1b4",
+  "data": {
+   "span": "f8e9c759",
+   "step": 3,
+   "commit": "3064b1b4414afcf1742f1f40b81292baf04e1919",
+   "index": 4,
+   "role": "bisect"
+  }
+ },
+ {
+  "seq": 43,
+  "ts": "2026-09-30T11:08:22.942+00:00",
+  "kind": "sandbox.checkout",
+  "source": "sandbox",
+  "message": "checked out 3064b1b4",
+  "data": {
+   "step": 3,
+   "index": 4,
+   "role": "bisect",
+   "commit": "3064b1b4414afcf1742f1f40b81292baf04e1919",
+   "dur_s": 0.006,
+   "backend": "local-worktree"
+  }
+ },
+ {
+  "seq": 44,
+  "ts": "2026-09-30T11:08:22.943+00:00",
+  "kind": "sandbox.deps",
+  "source": "sandbox",
+  "message": "dependencies: cache hit",
+  "data": {
+   "step": 3,
+   "index": 4,
+   "role": "bisect",
+   "commit": "3064b1b4414afcf1742f1f40b81292baf04e1919",
+   "dur_s": 0.0,
+   "cache_hit": true,
+   "lock_hash": "9cd44e938109fdd4",
+   "lockfile": "requirements.txt"
+  }
+ },
+ {
+  "seq": 45,
+  "ts": "2026-09-30T11:08:22.970+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 1/5 \u2192 9.713 ms",
+  "data": {
+   "step": 3,
+   "index": 4,
+   "role": "bisect",
+   "commit": "3064b1b4414afcf1742f1f40b81292baf04e1919",
+   "run": 1,
+   "n_runs": 5,
+   "score": 9.713,
+   "wall_s": 0.027,
+   "patched": false
+  }
+ },
+ {
+  "seq": 46,
+  "ts": "2026-09-30T11:08:22.995+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 2/5 \u2192 9.949 ms",
+  "data": {
+   "step": 3,
+   "index": 4,
+   "role": "bisect",
+   "commit": "3064b1b4414afcf1742f1f40b81292baf04e1919",
+   "run": 2,
+   "n_runs": 5,
+   "score": 9.949,
+   "wall_s": 0.025,
+   "patched": false
+  }
+ },
+ {
+  "seq": 47,
+  "ts": "2026-09-30T11:08:23.020+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 3/5 \u2192 10.215 ms",
+  "data": {
+   "step": 3,
+   "index": 4,
+   "role": "bisect",
+   "commit": "3064b1b4414afcf1742f1f40b81292baf04e1919",
+   "run": 3,
+   "n_runs": 5,
+   "score": 10.215,
+   "wall_s": 0.025,
+   "patched": false
+  }
+ },
+ {
+  "seq": 48,
+  "ts": "2026-09-30T11:08:23.044+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 4/5 \u2192 9.965 ms",
+  "data": {
+   "step": 3,
+   "index": 4,
+   "role": "bisect",
+   "commit": "3064b1b4414afcf1742f1f40b81292baf04e1919",
+   "run": 4,
+   "n_runs": 5,
+   "score": 9.965,
+   "wall_s": 0.024,
+   "patched": false
+  }
+ },
+ {
+  "seq": 49,
+  "ts": "2026-09-30T11:08:23.068+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 5/5 \u2192 10.005 ms",
+  "data": {
+   "step": 3,
+   "index": 4,
+   "role": "bisect",
+   "commit": "3064b1b4414afcf1742f1f40b81292baf04e1919",
+   "run": 5,
+   "n_runs": 5,
+   "score": 10.005,
+   "wall_s": 0.024,
+   "patched": false
+  }
+ },
+ {
+  "seq": 50,
+  "ts": "2026-09-30T11:08:23.071+00:00",
+  "kind": "model.start",
+  "source": "nano",
+  "message": "nano \u00b7 bisect:candidate=3064b1b441",
+  "data": {
+   "span": "f6ae0172",
+   "role": "nano",
+   "model_id": "offline-stub/nano",
+   "step": "bisect:candidate=3064b1b441",
+   "temperature": 0.2,
+   "request": {
+    "system": "You are a control-flow decision engine for a performance bisection tool.\nYou will be given a candidate commit's benchmark scores (multiple runs),\na baseline score, and a regression threshold percentage.\n\nDecide:\n1. Whether this candidate commit is \"regressed\" (median score is worse than\n   baseline by more than the threshold), \"clean\", or \"inconclusive\" (noise\n   too high to tell \u2014 e.g. run-to-run variance exceeds the threshold itself).\n2. If inconclusive, recommend how many additional runs to collect.\n\nReturn ONLY JSON matching this schema:\n{\n  \"verdict\": \"regressed\" | \"clean\" | \"inconclusive\",\n  \"median_score\": <number>,\n  \"pct_change_from_baseline\": <number>,\n  \"additional_runs_needed\": <integer, 0 if not inconclusive>\n}",
+    "payload": {
+     "commit_range": [
+      "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+      "e0c27bf5de90b84336fb6bbd8584008e614dcbba"
+     ],
+     "candidate_sha": "3064b1b4414afcf1742f1f40b81292baf04e1919",
+     "candidate_scores": [
+      9.713,
+      9.949,
+      10.215,
+      9.965,
+      10.005
+     ],
+     "baseline_score": 9.896,
+     "regression_threshold_pct": 15.0
+    }
+   },
+   "offline": true
+  }
+ },
+ {
+  "seq": 51,
+  "ts": "2026-09-30T11:08:23.071+00:00",
+  "kind": "model.end",
+  "source": "nano",
+  "message": "nano responded",
+  "data": {
+   "span": "f6ae0172",
+   "dur_s": 0.0,
+   "role": "nano",
+   "model_id": "offline-stub/nano",
+   "latency_s": 0.0001,
+   "attempts": 1,
+   "usage": {},
+   "response": "{\"verdict\": \"clean\", \"median_score\": 9.965, \"pct_change_from_baseline\": 0.6972514147130058, \"additional_runs_needed\": 0}",
+   "offline": true
+  }
+ },
+ {
+  "seq": 52,
+  "ts": "2026-09-30T11:08:23.071+00:00",
+  "kind": "nano.verdict",
+  "source": "nano",
+  "message": "Nano verdict: clean",
+  "data": {
+   "commit": "3064b1b4414afcf1742f1f40b81292baf04e1919",
+   "nano_verdict": "clean",
+   "final_verdict": "clean",
+   "overridden": false,
+   "median": 9.965,
+   "pct_change": 0.6972514147130058,
+   "additional_runs": 0,
+   "n_scores": 5
+  }
+ },
+ {
+  "seq": 53,
+  "ts": "2026-09-30T11:08:23.071+00:00",
+  "kind": "probe.end",
+  "source": "bisect",
+  "message": "clean \u00b7 median 9.965 ms (+0.7%)",
+  "data": {
+   "span": "f8e9c759",
+   "dur_s": 0.136,
+   "commit": "3064b1b4414afcf1742f1f40b81292baf04e1919",
+   "index": 4,
+   "role": "bisect",
+   "verdict": "clean",
+   "median": 9.965,
+   "raw_scores": [
+    9.713,
+    9.949,
+    10.215,
+    9.965,
+    10.005
+   ],
+   "pct_change": 0.6972514147130058,
+   "threshold_pct": 15.0,
+   "rounds": 1,
+   "step": 3
+  }
+ },
+ {
+  "seq": 54,
+  "ts": "2026-09-30T11:08:23.072+00:00",
+  "kind": "bisect.window",
+  "source": "bisect",
+  "message": "3064b1b4 is clean \u2014 guilty commit is after it \u2014 window now 4 commit(s)",
+  "data": {
+   "lo": 5,
+   "hi": 8,
+   "mid": 4,
+   "verdict": "clean"
+  }
+ },
+ {
+  "seq": 55,
+  "ts": "2026-09-30T11:08:23.072+00:00",
+  "kind": "probe.start",
+  "source": "bisect",
+  "message": "probe 4 \u00b7 midpoint 6776abf1",
+  "data": {
+   "span": "da5fc574",
+   "step": 4,
+   "commit": "6776abf193a30eca9e3410026847d0e62b4356b3",
+   "index": 6,
+   "role": "bisect"
+  }
+ },
+ {
+  "seq": 56,
+  "ts": "2026-09-30T11:08:23.079+00:00",
+  "kind": "sandbox.checkout",
+  "source": "sandbox",
+  "message": "checked out 6776abf1",
+  "data": {
+   "step": 4,
+   "index": 6,
+   "role": "bisect",
+   "commit": "6776abf193a30eca9e3410026847d0e62b4356b3",
+   "dur_s": 0.006,
+   "backend": "local-worktree"
+  }
+ },
+ {
+  "seq": 57,
+  "ts": "2026-09-30T11:08:23.079+00:00",
+  "kind": "sandbox.deps",
+  "source": "sandbox",
+  "message": "dependencies: cache hit",
+  "data": {
+   "step": 4,
+   "index": 6,
+   "role": "bisect",
+   "commit": "6776abf193a30eca9e3410026847d0e62b4356b3",
+   "dur_s": 0.0,
+   "cache_hit": true,
+   "lock_hash": "ab29da41cadc2da4",
+   "lockfile": "requirements.txt"
+  }
+ },
+ {
+  "seq": 58,
+  "ts": "2026-09-30T11:08:23.106+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 1/5 \u2192 9.868 ms",
+  "data": {
+   "step": 4,
+   "index": 6,
+   "role": "bisect",
+   "commit": "6776abf193a30eca9e3410026847d0e62b4356b3",
+   "run": 1,
+   "n_runs": 5,
+   "score": 9.868,
+   "wall_s": 0.027,
+   "patched": false
+  }
+ },
+ {
+  "seq": 59,
+  "ts": "2026-09-30T11:08:23.132+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 2/5 \u2192 10.144 ms",
+  "data": {
+   "step": 4,
+   "index": 6,
+   "role": "bisect",
+   "commit": "6776abf193a30eca9e3410026847d0e62b4356b3",
+   "run": 2,
+   "n_runs": 5,
+   "score": 10.144,
+   "wall_s": 0.025,
+   "patched": false
+  }
+ },
+ {
+  "seq": 60,
+  "ts": "2026-09-30T11:08:23.157+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 3/5 \u2192 9.865 ms",
+  "data": {
+   "step": 4,
+   "index": 6,
+   "role": "bisect",
+   "commit": "6776abf193a30eca9e3410026847d0e62b4356b3",
+   "run": 3,
+   "n_runs": 5,
+   "score": 9.865,
+   "wall_s": 0.025,
+   "patched": false
+  }
+ },
+ {
+  "seq": 61,
+  "ts": "2026-09-30T11:08:23.181+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 4/5 \u2192 10.129 ms",
+  "data": {
+   "step": 4,
+   "index": 6,
+   "role": "bisect",
+   "commit": "6776abf193a30eca9e3410026847d0e62b4356b3",
+   "run": 4,
+   "n_runs": 5,
+   "score": 10.129,
+   "wall_s": 0.024,
+   "patched": false
+  }
+ },
+ {
+  "seq": 62,
+  "ts": "2026-09-30T11:08:23.205+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 5/5 \u2192 9.735 ms",
+  "data": {
+   "step": 4,
+   "index": 6,
+   "role": "bisect",
+   "commit": "6776abf193a30eca9e3410026847d0e62b4356b3",
+   "run": 5,
+   "n_runs": 5,
+   "score": 9.735,
+   "wall_s": 0.025,
+   "patched": false
+  }
+ },
+ {
+  "seq": 63,
+  "ts": "2026-09-30T11:08:23.209+00:00",
+  "kind": "model.start",
+  "source": "nano",
+  "message": "nano \u00b7 bisect:candidate=6776abf193",
+  "data": {
+   "span": "9a595fd6",
+   "role": "nano",
+   "model_id": "offline-stub/nano",
+   "step": "bisect:candidate=6776abf193",
+   "temperature": 0.2,
+   "request": {
+    "system": "You are a control-flow decision engine for a performance bisection tool.\nYou will be given a candidate commit's benchmark scores (multiple runs),\na baseline score, and a regression threshold percentage.\n\nDecide:\n1. Whether this candidate commit is \"regressed\" (median score is worse than\n   baseline by more than the threshold), \"clean\", or \"inconclusive\" (noise\n   too high to tell \u2014 e.g. run-to-run variance exceeds the threshold itself).\n2. If inconclusive, recommend how many additional runs to collect.\n\nReturn ONLY JSON matching this schema:\n{\n  \"verdict\": \"regressed\" | \"clean\" | \"inconclusive\",\n  \"median_score\": <number>,\n  \"pct_change_from_baseline\": <number>,\n  \"additional_runs_needed\": <integer, 0 if not inconclusive>\n}",
+    "payload": {
+     "commit_range": [
+      "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+      "e0c27bf5de90b84336fb6bbd8584008e614dcbba"
+     ],
+     "candidate_sha": "6776abf193a30eca9e3410026847d0e62b4356b3",
+     "candidate_scores": [
+      9.868,
+      10.144,
+      9.865,
+      10.129,
+      9.735
+     ],
+     "baseline_score": 9.896,
+     "regression_threshold_pct": 15.0
+    }
+   },
+   "offline": true
+  }
+ },
+ {
+  "seq": 64,
+  "ts": "2026-09-30T11:08:23.209+00:00",
+  "kind": "model.end",
+  "source": "nano",
+  "message": "nano responded",
+  "data": {
+   "span": "9a595fd6",
+   "dur_s": 0.0,
+   "role": "nano",
+   "model_id": "offline-stub/nano",
+   "latency_s": 0.0001,
+   "attempts": 1,
+   "usage": {},
+   "response": "{\"verdict\": \"clean\", \"median_score\": 9.868, \"pct_change_from_baseline\": -0.28294260307195296, \"additional_runs_needed\": 0}",
+   "offline": true
+  }
+ },
+ {
+  "seq": 65,
+  "ts": "2026-09-30T11:08:23.209+00:00",
+  "kind": "nano.verdict",
+  "source": "nano",
+  "message": "Nano verdict: clean",
+  "data": {
+   "commit": "6776abf193a30eca9e3410026847d0e62b4356b3",
+   "nano_verdict": "clean",
+   "final_verdict": "clean",
+   "overridden": false,
+   "median": 9.868,
+   "pct_change": -0.28294260307195296,
+   "additional_runs": 0,
+   "n_scores": 5
+  }
+ },
+ {
+  "seq": 66,
+  "ts": "2026-09-30T11:08:23.209+00:00",
+  "kind": "probe.end",
+  "source": "bisect",
+  "message": "clean \u00b7 median 9.868 ms (-0.3%)",
+  "data": {
+   "span": "da5fc574",
+   "dur_s": 0.138,
+   "commit": "6776abf193a30eca9e3410026847d0e62b4356b3",
+   "index": 6,
+   "role": "bisect",
+   "verdict": "clean",
+   "median": 9.868,
+   "raw_scores": [
+    9.868,
+    10.144,
+    9.865,
+    10.129,
+    9.735
+   ],
+   "pct_change": -0.28294260307195296,
+   "threshold_pct": 15.0,
+   "rounds": 1,
+   "step": 4
+  }
+ },
+ {
+  "seq": 67,
+  "ts": "2026-09-30T11:08:23.210+00:00",
+  "kind": "bisect.window",
+  "source": "bisect",
+  "message": "6776abf1 is clean \u2014 guilty commit is after it \u2014 window now 2 commit(s)",
+  "data": {
+   "lo": 7,
+   "hi": 8,
+   "mid": 6,
+   "verdict": "clean"
+  }
+ },
+ {
+  "seq": 68,
+  "ts": "2026-09-30T11:08:23.210+00:00",
+  "kind": "probe.start",
+  "source": "bisect",
+  "message": "probe 5 \u00b7 midpoint 26f047a7",
+  "data": {
+   "span": "d06b868a",
+   "step": 5,
+   "commit": "26f047a7863417b169c8cf88aa25fe46880cc2a1",
+   "index": 7,
+   "role": "bisect"
+  }
+ },
+ {
+  "seq": 69,
+  "ts": "2026-09-30T11:08:23.217+00:00",
+  "kind": "sandbox.checkout",
+  "source": "sandbox",
+  "message": "checked out 26f047a7",
+  "data": {
+   "step": 5,
+   "index": 7,
+   "role": "bisect",
+   "commit": "26f047a7863417b169c8cf88aa25fe46880cc2a1",
+   "dur_s": 0.006,
+   "backend": "local-worktree"
+  }
+ },
+ {
+  "seq": 70,
+  "ts": "2026-09-30T11:08:23.217+00:00",
+  "kind": "sandbox.deps",
+  "source": "sandbox",
+  "message": "dependencies: cache hit",
+  "data": {
+   "step": 5,
+   "index": 7,
+   "role": "bisect",
+   "commit": "26f047a7863417b169c8cf88aa25fe46880cc2a1",
+   "dur_s": 0.0,
+   "cache_hit": true,
+   "lock_hash": "ab29da41cadc2da4",
+   "lockfile": "requirements.txt"
+  }
+ },
+ {
+  "seq": 71,
+  "ts": "2026-09-30T11:08:23.245+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 1/5 \u2192 10.022 ms",
+  "data": {
+   "step": 5,
+   "index": 7,
+   "role": "bisect",
+   "commit": "26f047a7863417b169c8cf88aa25fe46880cc2a1",
+   "run": 1,
+   "n_runs": 5,
+   "score": 10.022,
+   "wall_s": 0.027,
+   "patched": false
+  }
+ },
+ {
+  "seq": 72,
+  "ts": "2026-09-30T11:08:23.269+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 2/5 \u2192 9.929 ms",
+  "data": {
+   "step": 5,
+   "index": 7,
+   "role": "bisect",
+   "commit": "26f047a7863417b169c8cf88aa25fe46880cc2a1",
+   "run": 2,
+   "n_runs": 5,
+   "score": 9.929,
+   "wall_s": 0.024,
+   "patched": false
+  }
+ },
+ {
+  "seq": 73,
+  "ts": "2026-09-30T11:08:23.293+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 3/5 \u2192 9.680 ms",
+  "data": {
+   "step": 5,
+   "index": 7,
+   "role": "bisect",
+   "commit": "26f047a7863417b169c8cf88aa25fe46880cc2a1",
+   "run": 3,
+   "n_runs": 5,
+   "score": 9.68,
+   "wall_s": 0.024,
+   "patched": false
+  }
+ },
+ {
+  "seq": 74,
+  "ts": "2026-09-30T11:08:23.317+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 4/5 \u2192 9.706 ms",
+  "data": {
+   "step": 5,
+   "index": 7,
+   "role": "bisect",
+   "commit": "26f047a7863417b169c8cf88aa25fe46880cc2a1",
+   "run": 4,
+   "n_runs": 5,
+   "score": 9.706,
+   "wall_s": 0.025,
+   "patched": false
+  }
+ },
+ {
+  "seq": 75,
+  "ts": "2026-09-30T11:08:23.342+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 5/5 \u2192 9.918 ms",
+  "data": {
+   "step": 5,
+   "index": 7,
+   "role": "bisect",
+   "commit": "26f047a7863417b169c8cf88aa25fe46880cc2a1",
+   "run": 5,
+   "n_runs": 5,
+   "score": 9.918,
+   "wall_s": 0.025,
+   "patched": false
+  }
+ },
+ {
+  "seq": 76,
+  "ts": "2026-09-30T11:08:23.345+00:00",
+  "kind": "model.start",
+  "source": "nano",
+  "message": "nano \u00b7 bisect:candidate=26f047a786",
+  "data": {
+   "span": "09035101",
+   "role": "nano",
+   "model_id": "offline-stub/nano",
+   "step": "bisect:candidate=26f047a786",
+   "temperature": 0.2,
+   "request": {
+    "system": "You are a control-flow decision engine for a performance bisection tool.\nYou will be given a candidate commit's benchmark scores (multiple runs),\na baseline score, and a regression threshold percentage.\n\nDecide:\n1. Whether this candidate commit is \"regressed\" (median score is worse than\n   baseline by more than the threshold), \"clean\", or \"inconclusive\" (noise\n   too high to tell \u2014 e.g. run-to-run variance exceeds the threshold itself).\n2. If inconclusive, recommend how many additional runs to collect.\n\nReturn ONLY JSON matching this schema:\n{\n  \"verdict\": \"regressed\" | \"clean\" | \"inconclusive\",\n  \"median_score\": <number>,\n  \"pct_change_from_baseline\": <number>,\n  \"additional_runs_needed\": <integer, 0 if not inconclusive>\n}",
+    "payload": {
+     "commit_range": [
+      "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+      "e0c27bf5de90b84336fb6bbd8584008e614dcbba"
+     ],
+     "candidate_sha": "26f047a7863417b169c8cf88aa25fe46880cc2a1",
+     "candidate_scores": [
+      10.022,
+      9.929,
+      9.68,
+      9.706,
+      9.918
+     ],
+     "baseline_score": 9.896,
+     "regression_threshold_pct": 15.0
+    }
+   },
+   "offline": true
+  }
+ },
+ {
+  "seq": 77,
+  "ts": "2026-09-30T11:08:23.346+00:00",
+  "kind": "model.end",
+  "source": "nano",
+  "message": "nano responded",
+  "data": {
+   "span": "09035101",
+   "dur_s": 0.0,
+   "role": "nano",
+   "model_id": "offline-stub/nano",
+   "latency_s": 0.0001,
+   "attempts": 1,
+   "usage": {},
+   "response": "{\"verdict\": \"clean\", \"median_score\": 9.918, \"pct_change_from_baseline\": 0.22231204527080098, \"additional_runs_needed\": 0}",
+   "offline": true
+  }
+ },
+ {
+  "seq": 78,
+  "ts": "2026-09-30T11:08:23.346+00:00",
+  "kind": "nano.verdict",
+  "source": "nano",
+  "message": "Nano verdict: clean",
+  "data": {
+   "commit": "26f047a7863417b169c8cf88aa25fe46880cc2a1",
+   "nano_verdict": "clean",
+   "final_verdict": "clean",
+   "overridden": false,
+   "median": 9.918,
+   "pct_change": 0.22231204527080098,
+   "additional_runs": 0,
+   "n_scores": 5
+  }
+ },
+ {
+  "seq": 79,
+  "ts": "2026-09-30T11:08:23.346+00:00",
+  "kind": "probe.end",
+  "source": "bisect",
+  "message": "clean \u00b7 median 9.918 ms (+0.2%)",
+  "data": {
+   "span": "d06b868a",
+   "dur_s": 0.136,
+   "commit": "26f047a7863417b169c8cf88aa25fe46880cc2a1",
+   "index": 7,
+   "role": "bisect",
+   "verdict": "clean",
+   "median": 9.918,
+   "raw_scores": [
+    10.022,
+    9.929,
+    9.68,
+    9.706,
+    9.918
+   ],
+   "pct_change": 0.22231204527080098,
+   "threshold_pct": 15.0,
+   "rounds": 1,
+   "step": 5
+  }
+ },
+ {
+  "seq": 80,
+  "ts": "2026-09-30T11:08:23.346+00:00",
+  "kind": "bisect.window",
+  "source": "bisect",
+  "message": "26f047a7 is clean \u2014 guilty commit is after it \u2014 window now 1 commit(s)",
+  "data": {
+   "lo": 8,
+   "hi": 8,
+   "mid": 7,
+   "verdict": "clean"
+  }
+ },
+ {
+  "seq": 81,
+  "ts": "2026-09-30T11:08:23.347+00:00",
+  "kind": "probe.start",
+  "source": "bisect",
+  "message": "probe 6 \u00b7 midpoint e1481e72",
+  "data": {
+   "span": "1fcb23b5",
+   "step": 6,
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "index": 8,
+   "role": "bisect"
+  }
+ },
+ {
+  "seq": 82,
+  "ts": "2026-09-30T11:08:23.353+00:00",
+  "kind": "sandbox.checkout",
+  "source": "sandbox",
+  "message": "checked out e1481e72",
+  "data": {
+   "step": 6,
+   "index": 8,
+   "role": "bisect",
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "dur_s": 0.006,
+   "backend": "local-worktree"
+  }
+ },
+ {
+  "seq": 83,
+  "ts": "2026-09-30T11:08:23.353+00:00",
+  "kind": "sandbox.deps",
+  "source": "sandbox",
+  "message": "dependencies: cache hit",
+  "data": {
+   "step": 6,
+   "index": 8,
+   "role": "bisect",
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "dur_s": 0.0,
+   "cache_hit": true,
+   "lock_hash": "ab29da41cadc2da4",
+   "lockfile": "requirements.txt"
+  }
+ },
+ {
+  "seq": 84,
+  "ts": "2026-09-30T11:08:23.776+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 1/5 \u2192 303.545 ms",
+  "data": {
+   "step": 6,
+   "index": 8,
+   "role": "bisect",
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "run": 1,
+   "n_runs": 5,
+   "score": 303.545,
+   "wall_s": 0.423,
+   "patched": false
+  }
+ },
+ {
+  "seq": 85,
+  "ts": "2026-09-30T11:08:24.190+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 2/5 \u2192 300.058 ms",
+  "data": {
+   "step": 6,
+   "index": 8,
+   "role": "bisect",
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "run": 2,
+   "n_runs": 5,
+   "score": 300.058,
+   "wall_s": 0.414,
+   "patched": false
+  }
+ },
+ {
+  "seq": 86,
+  "ts": "2026-09-30T11:08:24.604+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 3/5 \u2192 302.383 ms",
+  "data": {
+   "step": 6,
+   "index": 8,
+   "role": "bisect",
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "run": 3,
+   "n_runs": 5,
+   "score": 302.383,
+   "wall_s": 0.414,
+   "patched": false
+  }
+ },
+ {
+  "seq": 87,
+  "ts": "2026-09-30T11:08:25.019+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 4/5 \u2192 302.872 ms",
+  "data": {
+   "step": 6,
+   "index": 8,
+   "role": "bisect",
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "run": 4,
+   "n_runs": 5,
+   "score": 302.872,
+   "wall_s": 0.415,
+   "patched": false
+  }
+ },
+ {
+  "seq": 88,
+  "ts": "2026-09-30T11:08:25.435+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 5/5 \u2192 302.501 ms",
+  "data": {
+   "step": 6,
+   "index": 8,
+   "role": "bisect",
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "run": 5,
+   "n_runs": 5,
+   "score": 302.501,
+   "wall_s": 0.416,
+   "patched": false
+  }
+ },
+ {
+  "seq": 89,
+  "ts": "2026-09-30T11:08:25.438+00:00",
+  "kind": "model.start",
+  "source": "nano",
+  "message": "nano \u00b7 bisect:candidate=e1481e7286",
+  "data": {
+   "span": "caf2159a",
+   "role": "nano",
+   "model_id": "offline-stub/nano",
+   "step": "bisect:candidate=e1481e7286",
+   "temperature": 0.2,
+   "request": {
+    "system": "You are a control-flow decision engine for a performance bisection tool.\nYou will be given a candidate commit's benchmark scores (multiple runs),\na baseline score, and a regression threshold percentage.\n\nDecide:\n1. Whether this candidate commit is \"regressed\" (median score is worse than\n   baseline by more than the threshold), \"clean\", or \"inconclusive\" (noise\n   too high to tell \u2014 e.g. run-to-run variance exceeds the threshold itself).\n2. If inconclusive, recommend how many additional runs to collect.\n\nReturn ONLY JSON matching this schema:\n{\n  \"verdict\": \"regressed\" | \"clean\" | \"inconclusive\",\n  \"median_score\": <number>,\n  \"pct_change_from_baseline\": <number>,\n  \"additional_runs_needed\": <integer, 0 if not inconclusive>\n}",
+    "payload": {
+     "commit_range": [
+      "4798bbe6bd86d6f519efecd8237acf735b9dac9c",
+      "e0c27bf5de90b84336fb6bbd8584008e614dcbba"
+     ],
+     "candidate_sha": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+     "candidate_scores": [
+      303.545,
+      300.058,
+      302.383,
+      302.872,
+      302.501
+     ],
+     "baseline_score": 9.896,
+     "regression_threshold_pct": 15.0
+    }
+   },
+   "offline": true
+  }
+ },
+ {
+  "seq": 90,
+  "ts": "2026-09-30T11:08:25.438+00:00",
+  "kind": "model.end",
+  "source": "nano",
+  "message": "nano responded",
+  "data": {
+   "span": "caf2159a",
+   "dur_s": 0.0,
+   "role": "nano",
+   "model_id": "offline-stub/nano",
+   "latency_s": 0.0001,
+   "attempts": 1,
+   "usage": {},
+   "response": "{\"verdict\": \"regressed\", \"median_score\": 302.501, \"pct_change_from_baseline\": 2956.800727566693, \"additional_runs_needed\": 0}",
+   "offline": true
+  }
+ },
+ {
+  "seq": 91,
+  "ts": "2026-09-30T11:08:25.438+00:00",
+  "kind": "nano.verdict",
+  "source": "nano",
+  "message": "Nano verdict: regressed",
+  "data": {
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "nano_verdict": "regressed",
+   "final_verdict": "regressed",
+   "overridden": false,
+   "median": 302.501,
+   "pct_change": 2956.800727566693,
+   "additional_runs": 0,
+   "n_scores": 5
+  }
+ },
+ {
+  "seq": 92,
+  "ts": "2026-09-30T11:08:25.438+00:00",
+  "kind": "probe.end",
+  "source": "bisect",
+  "message": "regressed \u00b7 median 302.501 ms (+2956.8%)",
+  "data": {
+   "span": "1fcb23b5",
+   "dur_s": 2.092,
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "index": 8,
+   "role": "bisect",
+   "verdict": "regressed",
+   "median": 302.501,
+   "raw_scores": [
+    303.545,
+    300.058,
+    302.383,
+    302.872,
+    302.501
+   ],
+   "pct_change": 2956.800727566693,
+   "threshold_pct": 15.0,
+   "rounds": 1,
+   "step": 6
+  }
+ },
+ {
+  "seq": 93,
+  "ts": "2026-09-30T11:08:25.439+00:00",
+  "kind": "bisect.window",
+  "source": "bisect",
+  "message": "guilty commit is at or before e1481e72 \u2014 window now 0 commit(s)",
+  "data": {
+   "lo": 8,
+   "hi": 7,
+   "mid": 8,
+   "verdict": "regressed"
+  }
+ },
+ {
+  "seq": 94,
+  "ts": "2026-09-30T11:08:25.439+00:00",
+  "kind": "bisect.done",
+  "source": "bisect",
+  "message": "guilty commit found: e1481e72 after 6 probes (a linear scan needs 19)",
+  "data": {
+   "regression_commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "index": 8,
+   "probes": 6,
+   "linear_runs": 19,
+   "subject": "refactor: simplify order summary loading"
+  }
+ },
+ {
+  "seq": 95,
+  "ts": "2026-09-30T11:08:25.440+00:00",
+  "kind": "stage.start",
+  "source": "system",
+  "message": "stage 2/3 \u00b7 diagnose",
+  "data": {
+   "stage": "diagnosing"
+  }
+ },
+ {
+  "seq": 96,
+  "ts": "2026-09-30T11:08:25.443+00:00",
+  "kind": "git.call",
+  "source": "git",
+  "message": "$ git diff e1481e7286dca276746d8a04b40bc6ec3ce1acbf^ e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+  "data": {
+   "cmd": [
+    "git",
+    "diff",
+    "e1481e7286dca276746d8a04b40bc6ec3ce1acbf^",
+    "e1481e7286dca276746d8a04b40bc6ec3ce1acbf"
+   ],
+   "dur_s": 0.003,
+   "ok": true
+  }
+ },
+ {
+  "seq": 97,
+  "ts": "2026-09-30T11:08:25.445+00:00",
+  "kind": "git.call",
+  "source": "git",
+  "message": "$ git log -1 --format=%B e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+  "data": {
+   "cmd": [
+    "git",
+    "log",
+    "-1",
+    "--format=%B",
+    "e1481e7286dca276746d8a04b40bc6ec3ce1acbf"
+   ],
+   "dur_s": 0.002,
+   "ok": true
+  }
+ },
+ {
+  "seq": 98,
+  "ts": "2026-09-30T11:08:25.448+00:00",
+  "kind": "git.call",
+  "source": "git",
+  "message": "$ git diff --name-only e1481e7286dca276746d8a04b40bc6ec3ce1acbf^ e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+  "data": {
+   "cmd": [
+    "git",
+    "diff",
+    "--name-only",
+    "e1481e7286dca276746d8a04b40bc6ec3ce1acbf^",
+    "e1481e7286dca276746d8a04b40bc6ec3ce1acbf"
+   ],
+   "dur_s": 0.002,
+   "ok": true
+  }
+ },
+ {
+  "seq": 99,
+  "ts": "2026-09-30T11:08:25.449+00:00",
+  "kind": "diagnose.start",
+  "source": "ultra",
+  "message": "handing the guilty diff (9 changed lines, 310 chars of file context) to Nemotron 3 Ultra",
+  "data": {
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "changed_lines": 9,
+   "context_chars": 310,
+   "before_score": 9.896,
+   "after_score": 302.501
+  }
+ },
+ {
+  "seq": 100,
+  "ts": "2026-09-30T11:08:25.449+00:00",
+  "kind": "model.start",
+  "source": "ultra",
+  "message": "ultra \u00b7 diagnose",
+  "data": {
+   "span": "b1140152",
+   "role": "ultra",
+   "model_id": "offline-stub/ultra",
+   "step": "diagnose",
+   "temperature": 0.3,
+   "request": {
+    "system": "You are a senior performance engineer diagnosing why a code change slowed\ndown a benchmark. You will be given the diff that caused the regression,\nsurrounding file context, the commit message, and before/after benchmark\nscores.\n\nClassify the root cause into exactly one of these categories:\n- \"n_plus_one\": repeated DB/network calls introduced inside a loop\n- \"lost_cache\": a cache was removed, invalidated, or bypassed\n- \"algorithmic_complexity\": complexity increased (e.g. O(n) to O(n^2))\n- \"blocking_call\": a new synchronous/blocking operation on a hot path\n- \"allocation_overhead\": unnecessary object allocation or serialization\n- \"other\": if none of the above cleanly fit \u2014 explain why in the field below\n\nYou MUST cite the exact line(s) from the diff responsible. Do not give a\ngeneric explanation that could apply to any diff \u2014 if you cannot point to\nspecific lines, use category \"other\" and say so honestly.\n\nReturn ONLY JSON matching this schema:\n{\n  \"category\": \"<one of the categories above>\",\n  \"explanation\": \"<plain-English explanation, 2-4 sentences, referencing the cited lines>\",\n  \"cited_lines\": [\"<exact line(s) or short snippet from the diff>\"],\n  \"confidence\": \"high\" | \"medium\" | \"low\"\n}",
+    "payload": {
+     "guilty_commit_sha": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+     "diff": "diff --git a/app/summary.py b/app/summary.py\nindex 69318cc..d194b2e 100644\n--- a/app/summary.py\n+++ b/app/summary.py\n@@ -1,16 +1,9 @@\n-from collections import defaultdict\n-\n from .serialize import serialize_order\n \n \n def get_order_summary(db, customer_id):\n     orders = db.query(\"orders\", customer_id=customer_id)\n-    order_ids = [o[\"id\"] for o in orders]\n-    items = db.query_in(\"line_items\", \"order_id\", order_ids)\n-    items_by_order = defaultdict(list)\n-    for item in items:\n-        items_by_order[item[\"order_id\"]].append(item)\n     for order in orders:\n-        order[\"line_items\"] = items_by_order.get(order[\"id\"], [])\n+        order[\"line_items\"] = db.query(\"line_items\", order_id=order[\"id\"])\n \n     return [serialize_order(o) for o in orders]\n",
+     "surrounding_context": "# FILE: app/summary.py\nfrom .serialize import serialize_order\n\n\ndef get_order_summary(db, customer_id):\n    orders = db.query(\"orders\", customer_id=customer_id)\n    for order in orders:\n        order[\"line_items\"] = db.query(\"line_items\", order_id=order[\"id\"])\n\n    return [serialize_order(o) for o in orders]\n",
+     "commit_message": "refactor: simplify order summary loading",
+     "before_score": 9.896,
+     "after_score": 302.501
+    }
+   },
+   "offline": true
+  }
+ },
+ {
+  "seq": 101,
+  "ts": "2026-09-30T11:08:25.449+00:00",
+  "kind": "model.end",
+  "source": "ultra",
+  "message": "ultra responded",
+  "data": {
+   "span": "b1140152",
+   "dur_s": 0.0,
+   "role": "ultra",
+   "model_id": "offline-stub/ultra",
+   "latency_s": 0.0,
+   "attempts": 1,
+   "usage": {},
+   "response": "{\"category\": \"n_plus_one\", \"explanation\": \"Inside the loop `for order in orders:`, the change now runs `order[\\\"line_items\\\"] = db.query(\\\"line_items\\\", order_id=order[\\\"id\\\"])` once per iteration, replacing the earlier batched lookup with one call per item. With N items this makes N+1 round-trips, which is what slowed the benchmark. [offline stand-in classifier \\u2014 not Nemotron]\", \"cited_lines\": [\"        order[\\\"line_items\\\"] = db.query(\\\"line_items\\\", order_id=order[\\\"id\\\"])\"], \"confidence\": \"medium\"}",
+   "offline": true
+  }
+ },
+ {
+  "seq": 102,
+  "ts": "2026-09-30T11:08:25.449+00:00",
+  "kind": "citation.check",
+  "source": "ultra",
+  "message": "citations verified against the real diff (1/1 lines)",
+  "data": {
+   "attempt": 1,
+   "ok": true,
+   "category": "n_plus_one",
+   "lines": [
+    {
+     "text": "        order[\"line_items\"] = db.query(\"line_items\", order_id=order[\"id\"])",
+     "verified": true
+    }
+   ]
+  }
+ },
+ {
+  "seq": 103,
+  "ts": "2026-09-30T11:08:25.450+00:00",
+  "kind": "tavily.skipped",
+  "source": "tavily",
+  "message": "Tavily grounding skipped \u2014 TAVILY_API_KEY not set",
+  "data": {
+   "query": "n plus one performance issue db.query"
+  }
+ },
+ {
+  "seq": 104,
+  "ts": "2026-09-30T11:08:25.450+00:00",
+  "kind": "diagnose.result",
+  "source": "ultra",
+  "message": "root cause: n_plus_one (medium confidence)",
+  "data": {
+   "category": "n_plus_one",
+   "confidence": "medium",
+   "citation_verification_failed": false,
+   "n_cited": 1,
+   "n_refs": 0
+  }
+ },
+ {
+  "seq": 105,
+  "ts": "2026-09-30T11:08:25.450+00:00",
+  "kind": "stage.start",
+  "source": "system",
+  "message": "stage 3/3 \u00b7 fix & verify",
+  "data": {
+   "stage": "fixing"
+  }
+ },
+ {
+  "seq": 106,
+  "ts": "2026-09-30T11:08:25.451+00:00",
+  "kind": "fix.start",
+  "source": "fix",
+  "message": "fix attempt 1/3",
+  "data": {
+   "span": "f40994db",
+   "attempt": 1,
+   "max_attempts": 3,
+   "retry": false
+  }
+ },
+ {
+  "seq": 107,
+  "ts": "2026-09-30T11:08:25.451+00:00",
+  "kind": "model.start",
+  "source": "ultra",
+  "message": "ultra \u00b7 fix:attempt=1",
+  "data": {
+   "span": "4a973912",
+   "role": "ultra",
+   "model_id": "offline-stub/ultra",
+   "step": "fix:attempt=1",
+   "temperature": 0.2,
+   "request": {
+    "system": "You are a senior engineer fixing a diagnosed performance regression.\nYou will be given the diagnosis (root cause + cited lines), the full\ncontents of the affected file(s) \u2014 each introduced by a \"# FILE: <path>\"\nline \u2014 and, on retries, the result of your previous attempt (if that\nattempt could not be applied or crashed when run, its note says why).\n\nPropose a minimal fix that addresses the specific root cause. Do not make\nunrelated changes. If this is a retry and your previous attempt did not\nresolve the regression, explain what you're changing about your approach\nbefore proposing the new fix.\n\nExpress the fix as EDITS, not as a diff. Each edit has the file path, an\n\"old\" string copied EXACTLY (character for character, including\nindentation and line breaks) from that file, and the \"new\" string that\nreplaces it. Each \"old\" must appear exactly once in its file, so include\nenough surrounding lines to make it unique. To delete code, use \"\" as\n\"new\".\n\nReturn ONLY JSON matching this schema:\n{\n  \"edits\": [{\"file\": \"<path>\", \"old\": \"<exact text>\", \"new\": \"<replacement>\"}],\n  \"rationale\": \"<1-3 sentences on why this fixes the root cause>\",\n  \"confidence_will_resolve\": \"high\" | \"medium\" | \"low\"\n}",
+    "payload": {
+     "diagnosis": {
+      "category": "n_plus_one",
+      "explanation": "Inside the loop `for order in orders:`, the change now runs `order[\"line_items\"] = db.query(\"line_items\", order_id=order[\"id\"])` once per iteration, replacing the earlier batched lookup with one call per item. With N items this makes N+1 round-trips, which is what slowed the benchmark. [offline stand-in classifier \u2014 not Nemotron]",
+      "cited_lines": [
+       "        order[\"line_items\"] = db.query(\"line_items\", order_id=order[\"id\"])"
+      ],
+      "confidence": "medium",
+      "tavily_refs": [],
+      "citation_verification_failed": false,
+      "diff": "diff --git a/app/summary.py b/app/summary.py\nindex 69318cc..d194b2e 100644\n--- a/app/summary.py\n+++ b/app/summary.py\n@@ -1,16 +1,9 @@\n-from collections import defaultdict\n-\n from .serialize import serialize_order\n \n \n def get_order_summary(db, customer_id):\n     orders = db.query(\"orders\", customer_id=customer_id)\n-    order_ids = [o[\"id\"] for o in orders]\n-    items = db.query_in(\"line_items\", \"order_id\", order_ids)\n-    items_by_order = defaultdict(list)\n-    for item in items:\n-        items_by_order[item[\"order_id\"]].append(item)\n     for order in orders:\n-        order[\"line_items\"] = items_by_order.get(order[\"id\"], [])\n+        order[\"line_items\"] = db.query(\"line_items\", order_id=order[\"id\"])\n \n     return [serialize_order(o) for o in orders]\n"
+     },
+     "full_file_contents": "# FILE: app/summary.py\nfrom .serialize import serialize_order\n\n\ndef get_order_summary(db, customer_id):\n    orders = db.query(\"orders\", customer_id=customer_id)\n    for order in orders:\n        order[\"line_items\"] = db.query(\"line_items\", order_id=order[\"id\"])\n\n    return [serialize_order(o) for o in orders]\n",
+     "attempt_number": 1,
+     "previous_attempt_result": null
+    }
+   },
+   "offline": true
+  }
+ },
+ {
+  "seq": 108,
+  "ts": "2026-09-30T11:08:25.451+00:00",
+  "kind": "model.end",
+  "source": "ultra",
+  "message": "ultra responded",
+  "data": {
+   "span": "4a973912",
+   "dur_s": 0.0,
+   "role": "ultra",
+   "model_id": "offline-stub/ultra",
+   "latency_s": 0.0,
+   "attempts": 1,
+   "usage": {},
+   "response": "{\"edits\": [{\"file\": \"app/summary.py\", \"old\": \"from .serialize import serialize_order\\n\\n\\ndef get_order_summary(db, customer_id):\\n    orders = db.query(\\\"orders\\\", customer_id=customer_id)\\n    for order in orders:\\n        order[\\\"line_items\\\"] = db.query(\\\"line_items\\\", order_id=order[\\\"id\\\"])\\n\\n    return [serialize_order(o) for o in orders]\", \"new\": \"from collections import defaultdict\\n\\nfrom .serialize import serialize_order\\n\\n\\ndef get_order_summary(db, customer_id):\\n    orders = db.query(\\\"orders\\\", customer_id=customer_id)\\n    order_ids = [o[\\\"id\\\"] for o in orders]\\n    items = db.query_in(\\\"line_items\\\", \\\"order_id\\\", order_ids)\\n    items_by_order = defaultdict(list)\\n    for item in items:\\n        items_by_order[item[\\\"order_id\\\"]].append(item)\\n    for order in orders:\\n        order[\\\"line_items\\\"] = items_by_order.get(order[\\\"id\\\"], [])\\n\\n    return [serialize_order(o) for o in orders]\"}], \"rationale\": \"Reverts the guilty commit's hunk so the code goes back to its previous, faster form. [offline stand-in fixer \\u2014 not Nemotron; the result is still verified by a real sandbox re-run]\", \"confidence_will_resolve\": \"medium\"}",
+   "offline": true
+  }
+ },
+ {
+  "seq": 109,
+  "ts": "2026-09-30T11:08:25.451+00:00",
+  "kind": "patch.built",
+  "source": "fix",
+  "message": "patch proposed: +8 \u22121 across 1 file(s) \u2014 Reverts the guilty commit's hunk so the code goes back to its previous, faster form. [offline stand-in fixer \u2014 not Nemotron; the result is still verified by a real sandbox re-run]",
+  "data": {
+   "attempt": 1,
+   "patch": "--- a/app/summary.py\n+++ b/app/summary.py\n@@ -1,9 +1,16 @@\n+from collections import defaultdict\n+\n from .serialize import serialize_order\n \n \n def get_order_summary(db, customer_id):\n     orders = db.query(\"orders\", customer_id=customer_id)\n+    order_ids = [o[\"id\"] for o in orders]\n+    items = db.query_in(\"line_items\", \"order_id\", order_ids)\n+    items_by_order = defaultdict(list)\n+    for item in items:\n+        items_by_order[item[\"order_id\"]].append(item)\n     for order in orders:\n-        order[\"line_items\"] = db.query(\"line_items\", order_id=order[\"id\"])\n+        order[\"line_items\"] = items_by_order.get(order[\"id\"], [])\n \n     return [serialize_order(o) for o in orders]\n",
+   "rationale": "Reverts the guilty commit's hunk so the code goes back to its previous, faster form. [offline stand-in fixer \u2014 not Nemotron; the result is still verified by a real sandbox re-run]",
+   "confidence": "medium",
+   "added": 8,
+   "removed": 1,
+   "files": 1
+  }
+ },
+ {
+  "seq": 110,
+  "ts": "2026-09-30T11:08:25.458+00:00",
+  "kind": "sandbox.checkout",
+  "source": "sandbox",
+  "message": "checked out e1481e72",
+  "data": {
+   "phase": "verify",
+   "attempt": 1,
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "dur_s": 0.006,
+   "backend": "local-worktree"
+  }
+ },
+ {
+  "seq": 111,
+  "ts": "2026-09-30T11:08:25.460+00:00",
+  "kind": "sandbox.patch",
+  "source": "sandbox",
+  "message": "patch applied cleanly",
+  "data": {
+   "phase": "verify",
+   "attempt": 1,
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "applied": true
+  }
+ },
+ {
+  "seq": 112,
+  "ts": "2026-09-30T11:08:25.461+00:00",
+  "kind": "sandbox.deps",
+  "source": "sandbox",
+  "message": "dependencies: cache hit",
+  "data": {
+   "phase": "verify",
+   "attempt": 1,
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "dur_s": 0.0,
+   "cache_hit": true,
+   "lock_hash": "ab29da41cadc2da4",
+   "lockfile": "requirements.txt"
+  }
+ },
+ {
+  "seq": 113,
+  "ts": "2026-09-30T11:08:25.488+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 1/5 \u2192 9.761 ms (patched)",
+  "data": {
+   "phase": "verify",
+   "attempt": 1,
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "run": 1,
+   "n_runs": 5,
+   "score": 9.761,
+   "wall_s": 0.028,
+   "patched": true
+  }
+ },
+ {
+  "seq": 114,
+  "ts": "2026-09-30T11:08:25.512+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 2/5 \u2192 9.745 ms (patched)",
+  "data": {
+   "phase": "verify",
+   "attempt": 1,
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "run": 2,
+   "n_runs": 5,
+   "score": 9.745,
+   "wall_s": 0.024,
+   "patched": true
+  }
+ },
+ {
+  "seq": 115,
+  "ts": "2026-09-30T11:08:25.537+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 3/5 \u2192 9.749 ms (patched)",
+  "data": {
+   "phase": "verify",
+   "attempt": 1,
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "run": 3,
+   "n_runs": 5,
+   "score": 9.749,
+   "wall_s": 0.025,
+   "patched": true
+  }
+ },
+ {
+  "seq": 116,
+  "ts": "2026-09-30T11:08:25.562+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 4/5 \u2192 10.183 ms (patched)",
+  "data": {
+   "phase": "verify",
+   "attempt": 1,
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "run": 4,
+   "n_runs": 5,
+   "score": 10.183,
+   "wall_s": 0.025,
+   "patched": true
+  }
+ },
+ {
+  "seq": 117,
+  "ts": "2026-09-30T11:08:25.588+00:00",
+  "kind": "sandbox.run",
+  "source": "sandbox",
+  "message": "run 5/5 \u2192 9.921 ms (patched)",
+  "data": {
+   "phase": "verify",
+   "attempt": 1,
+   "commit": "e1481e7286dca276746d8a04b40bc6ec3ce1acbf",
+   "run": 5,
+   "n_runs": 5,
+   "score": 9.921,
+   "wall_s": 0.025,
+   "patched": true
+  }
+ },
+ {
+  "seq": 118,
+  "ts": "2026-09-30T11:08:25.590+00:00",
+  "kind": "verify.result",
+  "source": "sandbox",
+  "message": "patched median 9.761 ms is -1.4% vs baseline \u2014 within threshold \u2714",
+  "data": {
+   "attempt": 1,
+   "median": 9.761,
+   "raw_scores": [
+    9.761,
+    9.745,
+    9.749,
+    10.183,
+    9.921
+   ],
+   "pct_change": -1.3641875505254804,
+   "threshold_pct": 15.0,
+   "resolved": true
+  }
+ },
+ {
+  "seq": 119,
+  "ts": "2026-09-30T11:08:25.590+00:00",
+  "kind": "fix.end",
+  "source": "fix",
+  "message": "attempt 1 VERIFIED \u2014 benchmark back to 9.761 ms",
+  "data": {
+   "span": "f40994db",
+   "dur_s": 0.14,
+   "attempt": 1,
+   "score_after": 9.761,
+   "resolved": true,
+   "before_score": 9.896,
+   "error": null
+  }
+ },
+ {
+  "seq": 120,
+  "ts": "2026-09-30T11:08:25.591+00:00",
+  "kind": "job.done",
+  "source": "system",
+  "message": "done \u2014 fix verified in a sandbox re-run",
+  "data": {
+   "outcome": "resolved"
+  }
+ }
+]

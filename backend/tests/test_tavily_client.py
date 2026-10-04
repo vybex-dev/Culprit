@@ -56,9 +56,11 @@ def test_returns_refs_on_successful_response():
 
     refs = search_grounding("n_plus_one", ["LineItem.objects.filter(order_id=order.id)"],
                              api_key="fake", client=_client_for(handler))
+    # Refs now carry Tavily's own relevance score (and snippet, when present) so
+    # the dashboard can show *why* each source is cited.
     assert refs == [
-        TavilyRef(title="Avoiding N+1 queries in Django", url="https://example.com/a"),
-        TavilyRef(title="ORM performance anti-patterns", url="https://example.com/b"),
+        TavilyRef(title="Avoiding N+1 queries in Django", url="https://example.com/a", score=0.9),
+        TavilyRef(title="ORM performance anti-patterns", url="https://example.com/b", score=0.8),
     ]
 
 
@@ -163,3 +165,41 @@ def test_request_uses_bearer_auth_and_query_max_results():
     assert seen["auth"] == "Bearer tvly-secret"
     assert seen["body"]["max_results"] == 7
     assert seen["body"]["query"] == "lost cache performance issue"
+
+
+def test_drops_results_below_relevance_floor_instead_of_forcing_a_citation():
+    def handler(request):
+        return httpx.Response(200, json={"results": [
+            {"title": "Relevant", "url": "https://example.com/a", "score": 0.7, "content": "N+1 explained. " * 50},
+            {"title": "Noise", "url": "https://example.com/b", "score": 0.05},
+        ]})
+
+    refs = search_grounding("n_plus_one", ["x.filter(a=b)"], api_key="fake", client=_client_for(handler), min_score=0.2)
+    assert [r.title for r in refs] == ["Relevant"]
+    assert refs[0].score == 0.7
+    assert 0 < len(refs[0].snippet) <= 400  # snippet kept, but bounded
+
+
+def test_unscored_results_are_kept():
+    def handler(request):
+        return httpx.Response(200, json={"results": [{"title": "T", "url": "https://example.com/a"}]})
+
+    refs = search_grounding("n_plus_one", ["x.filter(a=b)"], api_key="fake", client=_client_for(handler))
+    assert len(refs) == 1 and refs[0].score is None
+
+
+def test_emits_query_and_sources_to_reporter():
+    from events import Reporter
+
+    seen = []
+    rep = Reporter("j", sink=seen.append)
+
+    def handler(request):
+        return httpx.Response(200, json={"results": [{"title": "T", "url": "https://example.com/a", "score": 0.9}]})
+
+    search_grounding("lost_cache", ["cache.get(k)"], api_key="fake", client=_client_for(handler), reporter=rep)
+    kinds = [e.kind for e in seen]
+    assert kinds == ["tavily.start", "tavily.end"]
+    end = seen[-1]
+    assert end.data["n_refs"] == 1 and end.data["query"].startswith("lost cache performance issue")
+    assert end.data["refs"][0]["url"] == "https://example.com/a"

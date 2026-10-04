@@ -96,6 +96,9 @@ function attemptLines(attempt: FixAttempt): TraceEvent[] {
 }
 
 function finalLines(job: JobState, fix: Fix | null): TraceEvent[] {
+  if (job.status === "cancelled") {
+    return [{ id: "final-cancelled", seq: 9000, kind: "error", text: "job cancelled", detail: "stopped at the next checkpoint" }];
+  }
   if (job.status === "failed") {
     return [
       {

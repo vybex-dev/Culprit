@@ -41,7 +41,7 @@ const ms = (iso: string | undefined | null): number | null => {
 };
 
 export function isJobLive(job: JobState): boolean {
-  return job.status !== "done" && job.status !== "failed";
+  return job.status !== "done" && job.status !== "failed" && job.status !== "cancelled";
 }
 
 /** When the whole run ended, or null while it's still going. */

@@ -14,7 +14,8 @@ export type JobStatus =
   | "diagnosing"
   | "fixing"
   | "done"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 export type Confidence = "high" | "medium" | "low";
 
@@ -43,6 +44,10 @@ export interface TimelineEntry {
 export interface TavilyRef {
   title: string;
   url: string;
+  /** What the source says (bounded to ~400 chars by the backend). */
+  snippet?: string;
+  /** Tavily's own 0..1 relevance score for this result. */
+  score?: number | null;
 }
 
 export interface Diagnosis {
@@ -70,6 +75,9 @@ export interface FixAttempt {
   rationale: string;
   score_after: number;
   resolved: boolean;
+  /** Non-empty ⇒ the attempt never produced a measurement (the patch didn't
+   * apply, or the patched code crashed) and `score_after` is NOT one. */
+  error?: string | null;
 }
 
 export interface Fix {
@@ -101,12 +109,150 @@ export interface JobState {
   /** Server clock when this response was produced — used to correct for
    * clock skew so the live timer starts at the right number. */
   server_time?: string | null;
+
+  // --- Live-pipeline additions (all optional: fixtures and older backends
+  // simply lack them and the UI degrades to the coarse timeline). ---
+  /** "offline" ⇒ model roles were the labelled deterministic stand-in. */
+  mode?: "live" | "offline";
+  /** Every commit in the searched range; index 0 is the known-good start. */
+  commits?: Commit[];
+  /** Each benchmarked commit's raw runs + verdict, in probe order. */
+  probes?: Probe[];
+  baseline_score?: number | null;
+  threshold_pct?: number | null;
+  n_runs?: number | null;
+  /** [lo, hi] indices still under suspicion (hi < lo ⇒ converged). */
+  window?: [number, number] | null;
+  cancel_requested?: boolean;
+  metrics?: Metrics | null;
+  label?: string | null;
+}
+
+export interface Commit {
+  index: number;
+  sha: string;
+  subject: string;
+  author: string;
+  date: string;
+}
+
+export type Verdict = "baseline" | "clean" | "regressed";
+
+export interface NanoCall {
+  model_id: string;
+  latency_s: number;
+  nano_verdict: string;
+  final_verdict: string;
+  /** true ⇒ the small model's verdict contradicted plain arithmetic and was overridden. */
+  overridden: boolean;
+  n_scores: number;
+  offline?: boolean;
+}
+
+export interface Probe {
+  step: number;
+  commit: string;
+  index: number;
+  role: "baseline" | "endpoint" | "bisect";
+  raw_scores: number[];
+  median_score: number;
+  pct_change: number;
+  verdict: Verdict | string;
+  rounds: number;
+  nano: NanoCall[];
+  window?: [number, number] | null;
+  timestamp: string;
+  wall_s: number;
+}
+
+export interface ModelMetrics {
+  role: string;
+  model_id: string;
+  calls: number;
+  latency_s: number;
+  avg_latency_s: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  retries: number;
+  offline: boolean;
+}
+
+export interface Metrics {
+  models: Record<string, ModelMetrics>;
+  sandbox: { probes: number; runs: number; patched_runs: number; instances: number; run_wall_s: number };
+  tavily: { searches: number; sources: number };
+  git_calls: number;
+  events: number;
+}
+
+/** One entry of the live activity stream (backend/events.py). */
+export interface LogEvent {
+  seq: number;
+  ts: string;
+  kind: string;
+  source: string;
+  message: string;
+  data: Record<string, unknown>;
+}
+
+export interface EventsPage {
+  events: LogEvent[];
+  next: number;
+  done: boolean;
+  status: JobStatus;
+}
+
+export interface JobSummary {
+  job_id: string;
+  status: JobStatus;
+  repo_url: string;
+  created_at: string;
+  updated_at: string;
+  mode: "live" | "offline";
+  regression_commit: string | null;
+  final_result: FinalResult | null;
+  category: string | null;
+  before_score: number | null;
+  regressed_score: number | null;
+  after_score: number | null;
+  n_commits: number;
+  n_probes: number;
+  subject: string | null;
+  label: string | null;
+}
+
+export interface AppConfig {
+  mode: "live" | "offline";
+  sandbox_backend: "token_factory" | "local";
+  threshold_pct: number;
+  n_runs: number;
+  auto_range_commits: number;
+  max_concurrent_jobs: number;
+  demo_benchmark_command: string;
+}
+
+export interface PreflightCheck {
+  name: string;
+  status: "ok" | "warn" | "fail" | "unknown";
+  detail: string;
+  catalog_matches?: string[];
+  missing?: Record<string, string>;
+}
+
+export interface Preflight {
+  ready: boolean;
+  mode: "live" | "offline";
+  sandbox_backend: "token_factory" | "local";
+  checks: PreflightCheck[];
 }
 
 export interface AnalyzeRequest {
   repo_url: string;
   benchmark_command: string;
+  /** null ⇒ the backend auto-detects the range (last N first-parent commits). */
   commit_range: [string, string] | null;
+  label?: string;
 }
 
 export interface AnalyzeResponse {
@@ -126,4 +272,9 @@ export function isVerifiedResolved(job: JobState): boolean {
 // derived by the frontend, not a separate status").
 export function hasRegressionFound(job: JobState): boolean {
   return job.regression_commit !== null;
+}
+
+/** A job that will never change again. */
+export function isTerminal(status: JobStatus): boolean {
+  return status === "done" || status === "failed" || status === "cancelled";
 }
