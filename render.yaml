@@ -1,0 +1,51 @@
+# Put this file in the ROOT of your Culprit repo (next to backend/ and frontend/).
+services:
+  # ---------- Backend (FastAPI) ----------
+  - type: web
+    name: culprit-api
+    runtime: python
+    rootDir: backend
+    plan: free            # upgrade to starter ($7) if you need persistence / no sleep
+    buildCommand: pip install -r requirements.txt
+    startCommand: python api.py
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: HOST
+        value: 0.0.0.0
+      # NVIDIA-hosted Nemotron (OpenAI-compatible). The code reads these
+      # "NEBIUS_*" names, but they work with any compatible endpoint.
+      - key: NEBIUS_API_KEY          # paste your nvapi-... key in the dashboard
+        sync: false
+      - key: NEBIUS_API_BASE_URL
+        value: https://integrate.api.nvidia.com/v1
+      - key: NEMOTRON_NANO_MODEL_ID  # confirm via /preflight (see steps)
+        sync: false
+      - key: NEMOTRON_ULTRA_MODEL_ID
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      # No Nebius => local sandbox (USE_TOKEN_FACTORY unset/0)
+      - key: USE_TOKEN_FACTORY
+        value: "0"
+      - key: MAX_CONCURRENT_JOBS
+        value: "1"                   # free tier = 512 MB RAM
+      - key: BENCHMARK_N_RUNS
+        value: "3"
+      - key: CORS_ALLOWED_ORIGINS    # your frontend URL, e.g. https://culprit-web.onrender.com
+        sync: false
+
+  # ---------- Frontend (Next.js) ----------
+  - type: web
+    name: culprit-web
+    runtime: node
+    rootDir: frontend
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: NEXT_PUBLIC_API_BASE_URL   # your backend URL, e.g. https://culprit-api.onrender.com
+        sync: false                     # baked in at BUILD time
