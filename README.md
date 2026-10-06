@@ -1,6 +1,10 @@
 <div align="center">
 
-<img src="assets/logo/svg/culprit-logo.svg" alt="Culprit" width="360" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo/svg/culprit-logo-on-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/logo/svg/culprit-logo.svg">
+  <img src="assets/logo/svg/culprit-logo.svg" alt="Culprit" width="360" />
+</picture>
 
 ### Finds the exact commit where your benchmark got slower, explains why, and **proves the fix** with a real re-run — showing its work live.
 
