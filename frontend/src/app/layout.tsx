@@ -19,6 +19,7 @@ import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { HeaderLogo } from "@/components/HeaderLogo";
 import { ModeBanner } from "@/components/ModeBanner";
+import { Footer } from "@/components/Footer";
 
 export const metadata: Metadata = {
   title: "Culprit — Performance Regression Detective",
@@ -60,6 +61,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           </header>
           <ModeBanner />
           <main className="flex-1 flex flex-col">{children}</main>
+          <Footer />
         </ThemeProvider>
       </body>
     </html>
