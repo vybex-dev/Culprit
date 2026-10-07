@@ -145,7 +145,11 @@ class LocalGitSandbox(Sandbox):
     5-week build with limited credits doesn't reinstall on every commit).
     """
 
-    def __init__(self, repo_path: str, cache_dir: str | None = None, timeout_s: int = 60):
+    def __init__(self, repo_path: str, cache_dir: str | None = None, timeout_s: int | None = None):
+        if timeout_s is None:
+            # Per-run cap. 60s is fine on a laptop, but a throttled free-tier
+            # host can stall a run well past that — override via the env.
+            timeout_s = int(os.environ.get("BENCHMARK_RUN_TIMEOUT_S", "60"))
         self.repo_path = Path(repo_path).resolve()
         if not (self.repo_path / ".git").exists():
             raise SandboxError(f"{self.repo_path} is not a git repo root")
