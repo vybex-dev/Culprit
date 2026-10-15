@@ -139,6 +139,11 @@ class VerifyOutcome:
     score_after: float
     resolved: bool
     note: str = ""  # set when the attempt crashed / didn't apply and so has no measured score
+    # --- correctness guard (all optional; unset when the job has no test command) ---
+    perf_ok: bool | None = None  # benchmark came back within threshold (independent of the tests)
+    tests_passed: bool | None = None  # None = tests were not run (guard off, or perf already failed)
+    tests_note: str = ""  # why the tests rejected the patch; fed back to the model on retry
+    test_output: str = ""  # tail of the test run, kept for the UI
 
 
 @dataclass
@@ -154,6 +159,8 @@ class FixAttemptRecord:
     score_after: float
     resolved: bool
     error: str = ""  # non-empty ⇒ score_after is NOT a measurement (the patched run crashed / didn't apply)
+    tests_passed: bool | None = None  # correctness guard verdict; None = not run
+    test_output: str = ""
 
 
 @dataclass
@@ -238,17 +245,22 @@ def run_fix_loop(
         record = FixAttemptRecord(
             attempt=attempt_number, patch=proposal.patch, rationale=proposal.rationale,
             score_after=outcome.score_after, resolved=outcome.resolved, error=outcome.note,
+            tests_passed=outcome.tests_passed, test_output=outcome.test_output,
         )
         attempts.append(record)
         rep.end(
             span,
-            (f"attempt {attempt_number} VERIFIED — benchmark back to {outcome.score_after:.3f} ms" if outcome.resolved
+            (f"attempt {attempt_number} VERIFIED — benchmark back to {outcome.score_after:.3f} ms"
+             + (" and the test suite passes" if outcome.tests_passed else "") if outcome.resolved
+             else f"attempt {attempt_number} rejected — benchmark is {outcome.score_after:.3f} ms but the test suite FAILED"
+             if outcome.tests_passed is False
              else f"attempt {attempt_number} failed — the patched code did not run cleanly (no score)" if outcome.note
              else f"attempt {attempt_number} did not resolve it — {outcome.score_after:.3f} ms"),
             attempt=attempt_number, score_after=outcome.score_after, resolved=outcome.resolved,
             before_score=before_score,
             # non-empty ⇒ score_after is a placeholder, not a measurement
             error=outcome.note or None,
+            **({"tests_passed": outcome.tests_passed} if outcome.tests_passed is not None else {}),
         )
         if on_attempt:
             on_attempt(record)
@@ -258,8 +270,11 @@ def run_fix_loop(
                 before_score=before_score, after_score=outcome.score_after,
             )
         previous_attempt_result = PreviousAttemptResult(
-            patch_applied=proposal.patch, score_after_fix=outcome.score_after, still_regressed=True,
-            note=outcome.note,
+            patch_applied=proposal.patch, score_after_fix=outcome.score_after,
+            # Tests can reject a patch that DID fix the benchmark — say so, so the
+            # model doesn't discard the speed-up and start over from scratch.
+            still_regressed=True if outcome.perf_ok is None else not outcome.perf_ok,
+            note=outcome.note or outcome.tests_note,
         )
 
     return FixLoopResult(

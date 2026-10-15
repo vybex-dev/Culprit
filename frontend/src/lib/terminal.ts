@@ -247,15 +247,34 @@ function applyEnd(row: TermRow, ev: LogEvent): TermRow {
       };
       break;
     }
+    case "tests.end": {
+      const guard = str(d.guard);
+      const active = guard === "active";
+      out.glyph = active ? "ok" : "warn";
+      out.tone = active ? "good" : "warn";
+      out.chips = [
+        {
+          label: active ? "gates every fix" : guard === "baseline_failing" ? "already failing" : "unavailable",
+          tone: active ? "good" : "warn",
+          title: ev.message,
+        },
+      ];
+      if (d.output && !active) out.detail = { type: "text", text: str(d.output) };
+      out.meta = dur !== null ? fmtDur(dur) : undefined;
+      break;
+    }
     case "fix.end": {
       const resolved = d.resolved === true;
       const crashed = typeof d.error === "string" && d.error.length > 0;
+      const testsRejected = d.tests_passed === false;
       out.glyph = resolved ? "ok" : "fail";
       out.tone = resolved ? "good" : "bad";
       out.chips = [
         crashed
           ? { label: "crashed — no score", tone: "bad", title: str(d.error) }
-          : { label: resolved ? "verified" : "not resolved", tone: resolved ? "good" : "bad" },
+          : testsRejected
+            ? { label: "fast, but tests failed", tone: "bad", title: ev.message }
+            : { label: resolved ? "verified" : "not resolved", tone: resolved ? "good" : "bad" },
       ];
       // A crashed attempt never produced a measurement: don't show its placeholder score.
       const score = crashed ? null : num(d.score_after);
@@ -395,6 +414,18 @@ function describePoint(ev: LogEvent): TermRow {
         ],
         detail: { type: "patch", patch: str(d.patch), added: num(d.added) ?? 0, removed: num(d.removed) ?? 0, rationale: str(d.rationale) },
       });
+    case "sandbox.tests":
+      return base(ev, { glyph: d.passed ? "ok" : "fail", tone: d.passed ? "good" : "bad" });
+    case "tests.result": {
+      const passed = d.passed === true;
+      return base(ev, {
+        glyph: passed ? "ok" : "fail",
+        tone: passed ? "good" : "bad",
+        emphasis: !passed,
+        chips: [{ label: passed ? "tests pass" : "tests fail", tone: passed ? "good" : "bad" }],
+        detail: d.output ? { type: "text", text: str(d.output) } : undefined,
+      });
+    }
     case "patch.rejected":
     case "verify.crashed":
       return base(ev, { glyph: "fail", tone: "bad", detail: d.error ? { type: "text", text: str(d.error) } : undefined });

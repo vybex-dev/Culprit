@@ -185,6 +185,15 @@ class AnalyzeRequest(BaseModel):
     benchmark_command: str = Field(min_length=1, max_length=2000)
     commit_range: list[str] | None = None  # [start_rev, end_rev]; omit to auto-detect
     label: str | None = Field(default=None, max_length=120)
+    # Optional correctness guard: a command that must exit 0 on the patched code
+    # (e.g. "pytest -q") before a fix may be called verified.
+    test_command: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("test_command")
+    @classmethod
+    def _blank_test_command_is_none(cls, v: str | None) -> str | None:
+        v = (v or "").strip()
+        return v or None
 
     @field_validator("repo_url", "benchmark_command")
     @classmethod
@@ -412,6 +421,7 @@ def _run_analysis(
     allow_local: bool,
     auto_range_commits: int = _AUTO_RANGE_COMMITS,
     prebuilt_repo: Path | None = None,
+    test_command: str | None = None,
 ) -> None:
     reporter = rt.reporter(job_id)
     workdir = Path(tempfile.mkdtemp(prefix=f"prd_job_{job_id}_"))
@@ -535,6 +545,35 @@ def _run_analysis(
             (t.score for t in result.timeline if t.commit == result.regression_commit), result.baseline_score,
         )
 
+        # ---- correctness guard (optional) ---------------------------------
+        # A fast patch that breaks behaviour is not a fix. When the user gave a
+        # test command, it must be green on the patched code. It can only judge
+        # patches if it is green on the regressed commit to begin with, so check
+        # that first and say plainly when the guard can't be trusted.
+        guard_on = False
+        if test_command:
+            verify_ctx["phase"] = "tests"
+            tspan = reporter.start("tests", "sandbox", "test suite on the regressed commit (before any patch)",
+                                   command=test_command)
+            guard_state: str
+            try:
+                base_suite = sandbox.run_tests(result.regression_commit, test_command)
+                if base_suite.passed:
+                    guard_state, guard_on = "active", True
+                    msg = "test suite is green before the patch — it will gate every fix"
+                else:
+                    guard_state = "baseline_failing"
+                    msg = "test suite already FAILS on the regressed commit — it can't judge patches, so the fix is verified on performance only"
+                reporter.end(tspan, msg, passed=base_suite.passed, guard=guard_state,
+                             output=base_suite.output_tail, exit_code=base_suite.exit_code)
+            except SandboxError as e:
+                guard_state = "unavailable"
+                log.warning("api.tests_guard_unavailable", job_id=job_id, error=str(e)[-300:])
+                reporter.end(tspan, "could not run the test command here — the fix is verified on performance only",
+                             guard=guard_state, error=str(e)[-400:])
+            rt.update(job_id, lambda j: setattr(j, "tests_guard", guard_state))  # type: ignore[arg-type]
+            verify_ctx["phase"] = "verify"
+
         def _verify(proposal: FixProposal) -> VerifyOutcome:
             verify_ctx["attempt"] += 1
             try:
@@ -567,26 +606,63 @@ def _run_analysis(
                 ((score_after - result.baseline_score) / result.baseline_score) * 100
                 if result.baseline_score else 0.0
             )
-            resolved = pct_change <= regression_threshold_pct  # flag #6
+            perf_ok = pct_change <= regression_threshold_pct  # flag #6
             reporter.emit(
                 "verify.result", "sandbox",
                 f"patched median {score_after:.3f} ms is {pct_change:+.1f}% vs baseline — "
-                + ("within threshold ✔" if resolved else f"still above the {regression_threshold_pct:g}% threshold"),
+                + ("within threshold ✔" if perf_ok else f"still above the {regression_threshold_pct:g}% threshold"),
                 attempt=verify_ctx["attempt"], median=score_after, raw_scores=bench_result.raw_scores,
-                pct_change=pct_change, threshold_pct=regression_threshold_pct, resolved=resolved,
+                pct_change=pct_change, threshold_pct=regression_threshold_pct,
+                # With the guard on, "resolved" is only final once the tests have run too.
+                resolved=perf_ok and not guard_on,
             )
-            return VerifyOutcome(score_after=score_after, resolved=resolved)
+            if not (guard_on and perf_ok):
+                # No guard, or the benchmark already rejected it (don't spend a
+                # sandbox on tests for a patch that isn't fast enough).
+                return VerifyOutcome(score_after=score_after, resolved=perf_ok,
+                                     perf_ok=perf_ok if guard_on else None)
+
+            try:
+                suite = sandbox.run_tests(result.regression_commit, test_command, patch=proposal.patch)  # type: ignore[arg-type]
+            except SandboxError as e:
+                # Infra failure while running tests: we can't prove the patch is
+                # safe, so it is NOT verified — but it's not a dead job either.
+                log.warning("fixer.tests_run_failed", job_id=job_id, error=str(e)[-300:])
+                reporter.emit("tests.result", "sandbox",
+                              "the test suite could not be run on the patched code — not verifying",
+                              attempt=verify_ctx["attempt"], passed=False, error=str(e)[-400:])
+                return VerifyOutcome(
+                    score_after=score_after, resolved=False, perf_ok=True, tests_passed=False,
+                    tests_note=f"the test suite could not be run on your patch: {str(e)[-400:]}",
+                )
+            reporter.emit(
+                "tests.result", "sandbox",
+                "test suite passed on the patched code ✔" if suite.passed
+                else "test suite FAILED on the patched code — the speed-up broke behaviour",
+                attempt=verify_ctx["attempt"], passed=suite.passed, exit_code=suite.exit_code,
+                timed_out=suite.timed_out, output=suite.output_tail, dur_s=suite.duration_s,
+            )
+            return VerifyOutcome(
+                score_after=score_after, resolved=suite.passed, perf_ok=True, tests_passed=suite.passed,
+                test_output=suite.output_tail,
+                tests_note="" if suite.passed else (
+                    "your patch brought the benchmark back within threshold but BROKE THE TEST SUITE "
+                    f"(`{test_command}`). Keep the speed-up, fix the behaviour. Test output:\n{suite.output_tail[-1200:]}"
+                ),
+            )
 
         def _on_attempt(a) -> None:
             def m(j: JobState) -> None:
                 j.fix_attempts = [x for x in j.fix_attempts if x.attempt != a.attempt] + [
                     FixAttemptModel(attempt=a.attempt, patch=a.patch, rationale=a.rationale,
-                                    score_after=a.score_after, resolved=a.resolved, error=a.error or None)
+                                    score_after=a.score_after, resolved=a.resolved, error=a.error or None,
+                                    tests_passed=a.tests_passed, test_output=a.test_output or None)
                 ]
                 # Show the running fix summary live; `verified` only ever
                 # mirrors a real sandbox verdict (rule 1).
                 j.fix = FixModel(patch_diff=a.patch, verified=a.resolved,
-                                 before_score=result.baseline_score, after_score=a.score_after)
+                                 before_score=result.baseline_score, after_score=a.score_after,
+                                 tests_verified=(a.resolved and a.tests_passed is True) if guard_on else None)
 
             rt.update(job_id, m)
 
@@ -603,7 +679,8 @@ def _run_analysis(
         def _finish(j: JobState) -> None:
             j.fix_attempts = [
                 FixAttemptModel(attempt=a.attempt, patch=a.patch, rationale=a.rationale,
-                                score_after=a.score_after, resolved=a.resolved, error=a.error or None)
+                                score_after=a.score_after, resolved=a.resolved, error=a.error or None,
+                                tests_passed=a.tests_passed, test_output=a.test_output or None)
                 for a in fix_loop_result.attempts
             ]
             if fix_loop_result.final_patch is not None:
@@ -615,6 +692,7 @@ def _run_analysis(
                         fix_loop_result.after_score
                         if fix_loop_result.after_score is not None else fix_loop_result.before_score
                     ),
+                    tests_verified=(fix_loop_result.resolved if guard_on else None),
                 )
             j.final_result = "resolved" if fix_loop_result.resolved else "unresolved_diagnosis_only"
             _mark_stage(j, "done")
@@ -692,6 +770,7 @@ def create_app(
     def _start_job(
         background_tasks: BackgroundTasks, *, repo_url: str, benchmark_command: str,
         commit_range: list[str] | None, label: str | None, prebuilt_repo: Path | None = None,
+        test_command: str | None = None,
     ) -> str:
         offline = _is_offline()
         job_id = _new_job_id()
@@ -701,6 +780,7 @@ def create_app(
             commit_range=commit_range, created_at=now, updated_at=now,
             mode="offline" if offline else "live", label=label,
             threshold_pct=_DEFAULT_REGRESSION_THRESHOLD_PCT, n_runs=_DEFAULT_N_RUNS,
+            test_command=test_command,
         )
         store.create(job)
         background_tasks.add_task(
@@ -708,6 +788,7 @@ def create_app(
             commit_range=commit_range, regression_threshold_pct=_DEFAULT_REGRESSION_THRESHOLD_PCT,
             n_runs=_DEFAULT_N_RUNS, offline=offline, use_token_factory=_USE_TOKEN_FACTORY and not offline,
             allow_local=_allow_local() or prebuilt_repo is not None, prebuilt_repo=prebuilt_repo,
+            test_command=test_command,
         )
         return job_id
 
@@ -747,7 +828,7 @@ def create_app(
                         raise HTTPException(400, f"{rev!r} is not a valid git revision (sha, tag or branch name)")
         job_id = _start_job(
             background_tasks, repo_url=req.repo_url, benchmark_command=req.benchmark_command,
-            commit_range=commit_range, label=req.label,
+            commit_range=commit_range, label=req.label, test_command=req.test_command,
         )
         return AnalyzeResponse(job_id=job_id)
 
@@ -760,7 +841,7 @@ def create_app(
         job_id = _start_job(
             background_tasks, repo_url=repo.path, benchmark_command=repo.benchmark_command,
             commit_range=[repo.start_sha, repo.end_sha], label="Bundled demo · orders-service",
-            prebuilt_repo=Path(repo.path),
+            prebuilt_repo=Path(repo.path), test_command=repo.test_command,
         )
         return AnalyzeResponse(job_id=job_id)
 

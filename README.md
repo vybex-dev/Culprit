@@ -193,6 +193,7 @@ These are enforced in code (see `AGENTS.md`, rule 1), not just promised:
 - Benchmark numbers come **only** from real runs. "Verified" mirrors a real sandbox verdict and nothing else.
 - A fix that doesn't resolve the regression is reported as **unresolved**, with all attempts — never dressed up.
 - A patch that crashes is a failed attempt with **no score**.
+- **A fast-but-broken patch is not a fix.** If you pass a `test_command`, it must be green on the regressed commit (so it can actually judge) *and* on the patched code — otherwise the attempt is rejected, the failure output is fed back to Nemotron, and the job never says "verified". If the suite is already red or can't run, Culprit says so and verifies on performance only.
 - A diagnosis whose cited lines aren't in the diff is retried once, then downgraded to `other`.
 - Tavily results below the relevance floor are dropped, not cited.
 - Infrastructure failures fail the job **loudly**; nothing is silently skipped.
@@ -328,9 +329,12 @@ curl -X POST http://localhost:8000/analyze \
   -d '{
         "repo_url": "https://github.com/your-org/your-repo.git",
         "benchmark_command": "python bench.py",
-        "commit_range": ["v1.4.0", "main"]
+        "commit_range": ["v1.4.0", "main"],
+        "test_command": "pytest -q"
       }'
 # → {"job_id": "…"}
+# test_command is optional: when given, a fix only counts as verified if it also passes your tests.
+# (It runs inside the sandbox, so list your test dependencies in requirements.txt.)
 ```
 
 **Benchmark command requirements**
@@ -349,7 +353,7 @@ Then watch `/job/<job_id>`, download `/jobs/<job_id>/report.md` and `/jobs/<job_
 
 | Endpoint                            | Description                                                              |
 | ----------------------------------- | ------------------------------------------------------------------------ |
-| `POST /analyze`                     | `{repo_url, benchmark_command, commit_range?}` → `{job_id}`              |
+| `POST /analyze`                     | `{repo_url, benchmark_command, commit_range?, test_command?}` → `{job_id}` |
 | `POST /demo`                        | start a job on the bundled sample repo                                   |
 | `GET /jobs`                         | job history                                                              |
 | `GET /jobs/{id}`                    | full job state (+ derived `metrics`)                                     |

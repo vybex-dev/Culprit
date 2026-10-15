@@ -117,6 +117,7 @@ export default function NewAnalysisPage() {
   const { config } = useBackendStatus(false);
   const [repoUrl, setRepoUrl] = useState("");
   const [benchmarkCommand, setBenchmarkCommand] = useState("");
+  const [testCommand, setTestCommand] = useState("");
   const [startRev, setStartRev] = useState("");
   const [endRev, setEndRev] = useState("");
   const [submitting, setSubmitting] = useState<"form" | "demo" | null>(null);
@@ -138,6 +139,7 @@ export default function NewAnalysisPage() {
         repo_url: repoUrl.trim(),
         benchmark_command: benchmarkCommand.trim(),
         commit_range: startRev.trim() ? [startRev.trim(), endRev.trim()] : null,
+        ...(testCommand.trim() ? { test_command: testCommand.trim() } : {}),
       });
       router.push(`/job/${job_id}`);
     } catch (err) {
@@ -226,6 +228,14 @@ export default function NewAnalysisPage() {
             placeholder="python bench.py"
             value={benchmarkCommand}
             onChange={(e) => setBenchmarkCommand(e.target.value)}
+          />
+          <Field
+            label="Test command (optional)"
+            hint="A fix only counts as verified if this still exits 0 on the patched code — so a fast-but-broken patch is rejected."
+            type="text"
+            placeholder="pytest -q"
+            value={testCommand}
+            onChange={(e) => setTestCommand(e.target.value)}
           />
 
           <div>

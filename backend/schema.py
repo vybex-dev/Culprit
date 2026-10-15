@@ -73,6 +73,11 @@ class FixAttemptModel(BaseModel):
     # Non-empty ⇒ the attempt never produced a measurement (patch didn't apply,
     # or the patched code crashed) and `score_after` must not be read as one.
     error: str | None = None
+    # Correctness guard (additive): True/False once the job's test command ran on
+    # this patched code; None when it wasn't run (no test command, or the
+    # benchmark had already rejected the patch).
+    tests_passed: bool | None = None
+    test_output: str | None = None
 
 
 class FixModel(BaseModel):
@@ -80,6 +85,9 @@ class FixModel(BaseModel):
     verified: bool
     before_score: float
     after_score: float
+    # True only when `verified` AND the test suite ran green on the patched code.
+    # None when the job had no (usable) test command.
+    tests_verified: bool | None = None
 
 
 class CommitModel(BaseModel):
@@ -134,6 +142,12 @@ class JobState(BaseModel):
     cancel_requested: bool = False
     metrics: dict[str, Any] | None = None
     label: str | None = None
+    # Correctness guard (additive). `test_command` is what the user asked to run;
+    # `tests_guard` is what actually happened: "active" (suite green on the
+    # regressed commit, so it can judge patches), "baseline_failing" (already red
+    # before any patch — can't judge), or "unavailable" (couldn't run it here).
+    test_command: str | None = None
+    tests_guard: Literal["active", "baseline_failing", "unavailable"] | None = None
 
 
 class JobSummary(BaseModel):

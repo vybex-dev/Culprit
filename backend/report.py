@@ -104,6 +104,17 @@ def render_report(job: JobState, metrics: dict[str, Any] | None = None) -> str:
             n = len(job.fix_attempts)
             add(f"✅ **Verified.** After applying this patch on top of `{sha[:8] if sha else '?'}`, the benchmark re-ran at "
                 f"**{_fmt_ms(job.fix.after_score)}** (attempt {n}).\n")
+            if job.fix.tests_verified and job.test_command:
+                add(f"🧪 **Behaviour preserved.** The test suite (`{job.test_command}`) was green before the patch and "
+                    "is still green with it applied.\n")
+            elif job.test_command and job.tests_guard == "baseline_failing":
+                add(f"ℹ️ The test suite (`{job.test_command}`) was already failing on the regressed commit, so it could "
+                    "not vouch for this patch — verification is performance-only. Review behaviour yourself.\n")
+            elif job.test_command and job.tests_guard == "unavailable":
+                add(f"ℹ️ The test command (`{job.test_command}`) could not be run in the sandbox, so verification is "
+                    "performance-only. Review behaviour yourself.\n")
+            elif not job.test_command:
+                add("ℹ️ No test command was supplied, so verification is performance-only — run your tests before merging.\n")
         else:
             add("⚠️ **Not verified.** No patch brought the benchmark back within threshold. It is included for "
                 "transparency — **do not merge it blindly.**\n")

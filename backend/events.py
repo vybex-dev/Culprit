@@ -227,6 +227,13 @@ def sandbox_listener(reporter: Reporter, get_context: Callable[[], dict[str, Any
                 "sandbox.deps", "sandbox",
                 "dependencies: cache hit" if hit else "dependencies: installed (cache miss)", **payload,
             )
+        elif kind == "tests":
+            ok = data.get("passed")
+            tag = " (patched)" if data.get("patched") else ""
+            reporter.emit(
+                "sandbox.tests", "sandbox",
+                ("test suite passed" if ok else "test suite FAILED") + tag, **payload,
+            )
         elif kind == "instance":
             if data.get("phase") == "start":
                 reporter.emit(

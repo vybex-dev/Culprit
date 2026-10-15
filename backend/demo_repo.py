@@ -27,6 +27,8 @@ from pathlib import Path
 GUILTY_SUBJECT = "refactor: simplify order summary loading"
 BASELINE_SUBJECT = "bench: add order-summary benchmark"  # first commit that can be benchmarked
 BENCHMARK_COMMAND = "python bench.py"
+# Correctness guard for the demo: stdlib-only, so it runs in the bare sandbox venv.
+TEST_COMMAND = "python -m unittest tests/test_summary.py"
 
 _DB = '''"""Tiny in-memory stand-in for a database. Every query costs one simulated
 network round-trip, which is what makes call *counts* matter."""
@@ -102,6 +104,35 @@ for _ in range(3):
 print(round((time.perf_counter() - start) * 1000, 3))
 '''
 
+_TEST_SUMMARY = '''import unittest
+
+from app.db import DB
+from app.summary import get_order_summary
+
+
+class OrderSummaryTests(unittest.TestCase):
+    """Behaviour the summary must keep no matter how it loads its data — this is
+    what stops a "fix" from getting fast by returning the wrong thing."""
+
+    def test_customer_with_many_orders(self):
+        out = get_order_summary(DB(), 1)
+        self.assertEqual(len(out), 60)
+        self.assertTrue(all(o["items"] == 3 and o["total_cents"] == 17500 for o in out))
+        self.assertEqual([o["id"] for o in out], list(range(1, 61)))
+
+    def test_other_customer(self):
+        out = get_order_summary(DB(), 2)
+        self.assertEqual(len(out), 8)
+        self.assertEqual(sum(o["items"] for o in out), 24)
+
+    def test_unknown_customer_is_empty(self):
+        self.assertEqual(get_order_summary(DB(), 999), [])
+
+
+if __name__ == "__main__":
+    unittest.main()
+'''
+
 _AUTHORS = [
     ("Ana Ruiz", "ana@orders.example"),
     ("Dev Patel", "dev@orders.example"),
@@ -118,6 +149,7 @@ class DemoRepo:
     guilty_sha: str
     n_commits: int
     benchmark_command: str = BENCHMARK_COMMAND
+    test_command: str = TEST_COMMAND
 
 
 def _git(repo: Path, *args: str, env: dict[str, str] | None = None) -> str:
@@ -178,7 +210,8 @@ def build_demo_repo(dest: str | Path) -> DemoRepo:
         ("docs: document benchmark usage", {"README.md": "# orders-service\n\nSummarises a customer's orders.\n\nRun `python bench.py`.\n"}),
         ("chore: pin python version note", {"requirements.txt": "# no runtime deps\n# python>=3.10\n"}),
         ("feat: include item count in summary", {"app/serialize.py": _SERIALIZE}),
-        ("test: add smoke test placeholder", {"tests/test_smoke.py": "def test_smoke():\n    assert True\n"}),
+        ("test: add smoke test placeholder", {"tests/test_smoke.py": "def test_smoke():\n    assert True\n",
+                                             "tests/test_summary.py": _TEST_SUMMARY}),
         (GUILTY_SUBJECT, {"app/summary.py": _SUMMARY_GUILTY}),
         ("docs: changelog for 0.2", {"CHANGELOG.md": "## 0.2\n- summary loading simplified\n"}),
         ("chore: bump version metadata", {"VERSION": "0.2.0\n"}),

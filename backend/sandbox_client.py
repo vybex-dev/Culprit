@@ -85,6 +85,21 @@ class BenchmarkResult:
     patched: bool = False  # True when this result came from apply_patch_and_benchmark()
 
 
+@dataclass
+class SuiteResult:
+    """Outcome of running a user's *test command* (correctness guard) on a
+    commit, optionally with a patch applied. `passed` is True only for a clean
+    exit 0 — a failing suite is a normal result, not an exception. Infra
+    problems (checkout, install, API) still raise SandboxError."""
+    commit_sha: str
+    passed: bool
+    exit_code: int | None
+    output_tail: str = ""
+    duration_s: float = 0.0
+    timed_out: bool = False
+    patched: bool = False
+
+
 # A sandbox listener receives (kind, data) for every real thing a backend does:
 # "checkout", "patch", "deps", "run", "instance". It is how the live terminal
 # shows each benchmark run landing *as it happens* instead of after the fact.
@@ -135,6 +150,19 @@ class Sandbox(ABC):
         nothing changed (AGENTS.md #1 applies to Fixer verification exactly
         as it does to Bisector runs).
         """
+
+    def run_tests(
+        self, commit_sha: str, test_command: str, *, patch: str | None = None
+    ) -> SuiteResult:
+        """Correctness guard: checkout commit_sha in a fresh isolated
+        environment, optionally apply `patch`, install deps, run
+        `test_command` ONCE and report whether it exited 0.
+
+        Deliberately NOT abstract: existing Sandbox subclasses (and test
+        fakes) that predate the guard keep working; only a job that actually
+        supplies a test command needs a backend that implements this.
+        """
+        raise SandboxError(f"{type(self).__name__} does not support running a test command")
 
 
 class LocalGitSandbox(Sandbox):
@@ -314,6 +342,62 @@ class LocalGitSandbox(Sandbox):
                 shutil.rmtree(venv_dir, ignore_errors=True)
 
 
+    def run_tests(
+        self, commit_sha: str, test_command: str, *, patch: str | None = None
+    ) -> SuiteResult:
+        timeout_s = int(os.environ.get("TEST_RUN_TIMEOUT_S", "300"))
+        worktree = Path(tempfile.mkdtemp(prefix=f"prd_tw_{commit_sha[:8]}_"))
+        worktree.rmdir()  # `git worktree add` requires the target not exist yet
+        venv_dir: Path | None = None
+        venv_is_ephemeral = False
+        try:
+            try:
+                proc = subprocess.run(
+                    ["git", "worktree", "add", "--detach", str(worktree), commit_sha],
+                    cwd=self.repo_path, capture_output=True, text=True, timeout=60,
+                )
+            except subprocess.TimeoutExpired as e:
+                raise SandboxError(f"checkout timed out (60s) for {commit_sha}") from e
+            if proc.returncode != 0:
+                raise SandboxError(f"checkout failed for {commit_sha}: {proc.stderr}")
+            if patch is not None:
+                self._apply_patch(worktree, patch)  # raises SandboxError on failure
+            lock_hash = self._lockfile_hash(worktree)
+            venv_dir, venv_is_ephemeral = self._venv_for_hash(lock_hash, worktree)
+
+            t0 = time.perf_counter()
+            try:
+                run = subprocess.run(
+                    test_command, shell=True, cwd=worktree, capture_output=True, text=True, timeout=timeout_s,
+                    env={**os.environ, "PATH": f"{venv_dir}/bin:{os.environ['PATH']}"},
+                )
+            except subprocess.TimeoutExpired as e:
+                tail = ((e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or ""))
+                result = SuiteResult(
+                    commit_sha=commit_sha, passed=False, exit_code=None, timed_out=True, patched=patch is not None,
+                    output_tail=(tail[-1200:] + f"\n[test command timed out after {timeout_s}s]").strip(),
+                    duration_s=round(time.perf_counter() - t0, 3),
+                )
+            else:
+                result = SuiteResult(
+                    commit_sha=commit_sha, passed=run.returncode == 0, exit_code=run.returncode,
+                    output_tail=(run.stdout + ("\n" if run.stdout and run.stderr else "") + run.stderr)[-1500:].strip(),
+                    duration_s=round(time.perf_counter() - t0, 3), patched=patch is not None,
+                )
+            log.info("sandbox.tests", commit=commit_sha, passed=result.passed, exit_code=result.exit_code,
+                     patched=patch is not None)
+            self._notify("tests", commit=commit_sha, passed=result.passed, exit_code=result.exit_code,
+                         dur_s=result.duration_s, patched=patch is not None, timed_out=result.timed_out)
+            return result
+        finally:
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", str(worktree)],
+                cwd=self.repo_path, capture_output=True, text=True,
+            )
+            if venv_dir is not None and venv_is_ephemeral:
+                shutil.rmtree(venv_dir, ignore_errors=True)
+
+
 class TokenFactorySandbox(Sandbox):
     """Real backend: Nebius Token Factory Sandboxes (ConTree) over plain HTTPS.
 
@@ -474,6 +558,24 @@ while [ "$i" -lt "$CULPRIT_N_RUNS" ]; do
 done
 """
 
+    _TEST_SCRIPT = r"""set -e
+mkdir -p /work && cd /work
+base64 -d | tar xz -C /work
+if [ -n "$CULPRIT_PATCH_B64" ]; then
+  echo "$CULPRIT_PATCH_B64" | base64 -d > /tmp/culprit.patch
+  git apply --whitespace=fix /tmp/culprit.patch || patch -p1 < /tmp/culprit.patch
+fi
+for f in requirements.txt requirements.lock; do
+  if [ -f "$f" ]; then pip install -q -r "$f" 1>&2; break; fi
+done
+set +e
+out=$(sh -c "$CULPRIT_TEST" 2>&1)
+code=$?
+printf '%s\n' "$out" | tail -n 40
+echo "CULPRIT_TEST_EXIT=$code"
+exit 0
+"""
+
     def _run(self, commit_sha: str, benchmark_command: str, n_runs: int, patch: str | None) -> BenchmarkResult:
         image = self._resolve_image()
         env = {"CULPRIT_N_RUNS": str(n_runs), "CULPRIT_BENCH": benchmark_command}
@@ -543,6 +645,69 @@ done
         self, commit_sha: str, patch: str, benchmark_command: str, n_runs: int = 5
     ) -> BenchmarkResult:
         return self._run(commit_sha, benchmark_command, n_runs, patch)
+
+
+    def run_tests(
+        self, commit_sha: str, test_command: str, *, patch: str | None = None
+    ) -> SuiteResult:
+        image = self._resolve_image()
+        env = {"CULPRIT_TEST": test_command}
+        if patch is not None:
+            env["CULPRIT_PATCH_B64"] = base64.b64encode(patch.encode()).decode("ascii")
+        body = {
+            "command": self._TEST_SCRIPT, "shell": True, "image": image, "disposable": True,
+            "env": env, "timeout": self.timeout_s,
+            "stdin": {"value": self._git_archive_b64(commit_sha), "encoding": "ascii", "close": True},
+            "networking": {"enabled": True},
+        }
+        r = self._post("/instances", body)
+        op_id = r.headers.get("Location", "").rsplit("/", 1)[-1] or r.json().get("uuid")
+        if not op_id:
+            raise SandboxError("sandbox API did not return an operation id")
+        self._notify("instance", phase="start", commit=commit_sha, operation=op_id,
+                     patched=patch is not None, disposable=True, image=image)
+        t_vm = time.perf_counter()
+        op = self._wait(op_id)
+        dur = round(time.perf_counter() - t_vm, 3)
+        self._notify("instance", phase="end", commit=commit_sha, operation=op_id,
+                     status=op.get("status"), dur_s=dur)
+
+        result = (op.get("metadata") or {}).get("result") or {}
+        stdout = self._decode(result.get("stdout"))
+        stderr = self._decode(result.get("stderr"))
+        state = result.get("state") or {}
+        if op.get("status") == "SUCCESS" and state.get("timed_out"):
+            suite = SuiteResult(commit_sha=commit_sha, passed=False, exit_code=None, timed_out=True,
+                                output_tail=(stdout[-1200:] + "\n[test command timed out]").strip(),
+                                duration_s=dur, patched=patch is not None)
+        else:
+            # The script always exits 0 once it reaches the test step, so any
+            # failure here (checkout/patch/install/API) is infrastructure.
+            if op.get("status") != "SUCCESS" or state.get("exit_code") not in (0, None):
+                raise SandboxError(
+                    f"sandbox test run failed for {commit_sha} (status={op.get('status')}, "
+                    f"exit={state.get('exit_code')}, error={op.get('error')}): {stderr[-2000:]}"
+                )
+            code: int | None = None
+            lines = stdout.splitlines()
+            for i in range(len(lines) - 1, -1, -1):
+                if lines[i].startswith("CULPRIT_TEST_EXIT="):
+                    try:
+                        code = int(lines[i].split("=", 1)[1])
+                    except ValueError:
+                        code = None
+                    lines = lines[:i]
+                    break
+            if code is None:
+                raise SandboxError(f"test run for {commit_sha} printed no exit status: {stdout[-500:]!r}")
+            suite = SuiteResult(commit_sha=commit_sha, passed=code == 0, exit_code=code,
+                                output_tail="\n".join(lines)[-1500:].strip(), duration_s=dur,
+                                patched=patch is not None)
+        log.info("sandbox.tests", backend="token_factory", commit=commit_sha, passed=suite.passed,
+                 patched=patch is not None, operation=op_id)
+        self._notify("tests", commit=commit_sha, passed=suite.passed, exit_code=suite.exit_code,
+                     dur_s=suite.duration_s, patched=patch is not None, timed_out=suite.timed_out)
+        return suite
 
 
 def get_sandbox(repo_url_or_path: str, use_token_factory: bool = False) -> Sandbox:

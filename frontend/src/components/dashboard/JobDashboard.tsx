@@ -178,7 +178,7 @@ export function JobDashboard({
       >
         <div className="space-y-6">
           {job.diagnosis ? <DiagnosisSection diagnosis={job.diagnosis} impact={regressionImpact(job)} /> : <DiagnosisSectionLoading />}
-          {job.diagnosis && <FixSection fix={job.fix} attempts={job.fix_attempts} />}
+          {job.diagnosis && <FixSection fix={job.fix} attempts={job.fix_attempts} guard={job.tests_guard} />}
         </div>
       </DrillDownPanel>
     </div>

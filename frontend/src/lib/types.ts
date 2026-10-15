@@ -78,6 +78,10 @@ export interface FixAttempt {
   /** Non-empty ⇒ the attempt never produced a measurement (the patch didn't
    * apply, or the patched code crashed) and `score_after` is NOT one. */
   error?: string | null;
+  /** Correctness guard: true/false once the job's test command ran on this
+   * patched code; null/absent when it wasn't run. */
+  tests_passed?: boolean | null;
+  test_output?: string | null;
 }
 
 export interface Fix {
@@ -85,6 +89,9 @@ export interface Fix {
   verified: boolean;
   before_score: number;
   after_score: number;
+  /** true only when `verified` AND the test suite was green on the patched
+   * code; null/absent when the job had no usable test command. */
+  tests_verified?: boolean | null;
 }
 
 export interface JobState {
@@ -126,6 +133,12 @@ export interface JobState {
   cancel_requested?: boolean;
   metrics?: Metrics | null;
   label?: string | null;
+  /** The correctness-guard command the user supplied, if any. */
+  test_command?: string | null;
+  /** What the guard actually did: "active" (green before any patch, so it
+   * gates fixes), "baseline_failing" (already red — can't judge), or
+   * "unavailable" (couldn't be run). */
+  tests_guard?: "active" | "baseline_failing" | "unavailable" | null;
 }
 
 export interface Commit {
@@ -253,6 +266,8 @@ export interface AnalyzeRequest {
   /** null ⇒ the backend auto-detects the range (last N first-parent commits). */
   commit_range: [string, string] | null;
   label?: string;
+  /** Optional correctness guard: must exit 0 on the patched code for a fix to count as verified. */
+  test_command?: string;
 }
 
 export interface AnalyzeResponse {
