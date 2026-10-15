@@ -403,13 +403,20 @@ export function TimelineChart({
         )}
 
         {active && !reduceMotion && (
-          <motion.div
-            className="pointer-events-none absolute inset-y-3 left-0 w-24 bg-gradient-to-r from-transparent via-iris/[0.08] to-transparent"
-            initial={{ x: "-100%" }}
-            animate={{ x: "520%" }}
-            transition={{ duration: 2.6, repeat: Infinity, ease: "linear" }}
+          // Clipped to the plot area (between the y-axis and the right margin), so the
+          // sweep starts where the data starts instead of from outside the card.
+          <div
+            className="pointer-events-none absolute overflow-hidden"
+            style={{ left: M.left, top: M.top, width: innerW, height: innerH }}
             aria-hidden
-          />
+          >
+            <motion.div
+              className="absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-transparent via-iris/[0.08] to-transparent"
+              initial={{ x: -96 }}
+              animate={{ x: innerW }}
+              transition={{ duration: 2.6, repeat: Infinity, ease: "linear" }}
+            />
+          </div>
         )}
       </div>
       <p className="line-clamp-3 shrink-0 px-4 pb-3 text-[11px] text-muted/80">
