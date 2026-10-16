@@ -84,6 +84,31 @@ export interface FixAttempt {
   test_output?: string | null;
 }
 
+/** One function whose cost grew between the last good commit and the guilty one. */
+export interface Hotspot {
+  func: string;
+  file: string;
+  line: number;
+  /** lives in the repo's own code (vs stdlib / third party) */
+  project: boolean;
+  calls_before: number;
+  calls_after: number;
+  cum_before_s: number;
+  cum_after_s: number;
+  self_before_s: number;
+  self_after_s: number;
+}
+
+/** Measured (cProfile) evidence behind the diagnosis. Absolute times include
+ * profiler overhead — call counts and relative growth are what to read. */
+export interface Profile {
+  before_commit: string;
+  after_commit: string;
+  before_total_s: number;
+  after_total_s: number;
+  hotspots: Hotspot[];
+}
+
 export interface Fix {
   patch_diff: string;
   verified: boolean;
@@ -133,6 +158,9 @@ export interface JobState {
   cancel_requested?: boolean;
   metrics?: Metrics | null;
   label?: string | null;
+  /** Profile of the benchmark before vs at the guilty commit; absent when it
+   * couldn't be taken (e.g. a non-Python benchmark) — never estimated. */
+  profile?: Profile | null;
   /** The correctness-guard command the user supplied, if any. */
   test_command?: string | null;
   /** What the guard actually did: "active" (green before any patch, so it

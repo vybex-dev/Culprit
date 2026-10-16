@@ -20,6 +20,7 @@ import { RegressionCallout } from "./RegressionCallout";
 import { DrillDownPanel } from "./DrillDownPanel";
 import { DiagnosisSection, DiagnosisSectionLoading, type RegressionImpact } from "./DiagnosisSection";
 import { FixSection } from "./FixSection";
+import { ProfileEvidence } from "./ProfileEvidence";
 import { FinalResultBanner } from "./FinalResultBanner";
 import { ErrorBanner } from "./ErrorState";
 import { ActivitySignal } from "@/components/ActivitySignal";
@@ -178,6 +179,7 @@ export function JobDashboard({
       >
         <div className="space-y-6">
           {job.diagnosis ? <DiagnosisSection diagnosis={job.diagnosis} impact={regressionImpact(job)} /> : <DiagnosisSectionLoading />}
+          {job.diagnosis && job.profile && job.profile.hotspots.length > 0 && <ProfileEvidence profile={job.profile} />}
           {job.diagnosis && <FixSection fix={job.fix} attempts={job.fix_attempts} guard={job.tests_guard} />}
         </div>
       </DrillDownPanel>

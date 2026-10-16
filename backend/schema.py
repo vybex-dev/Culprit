@@ -90,6 +90,30 @@ class FixModel(BaseModel):
     tests_verified: bool | None = None
 
 
+class HotspotModel(BaseModel):
+    """One function whose cost grew between the last good commit and the guilty one."""
+    func: str
+    file: str = ""
+    line: int = 0
+    project: bool = False  # lives in the repo's own code (vs stdlib / third party)
+    calls_before: int
+    calls_after: int
+    cum_before_s: float
+    cum_after_s: float
+    self_before_s: float = 0.0
+    self_after_s: float = 0.0
+
+
+class ProfileModel(BaseModel):
+    """Measured (cProfile) evidence behind the diagnosis. Absolute times include
+    profiler overhead — call counts and relative growth are what to read."""
+    before_commit: str
+    after_commit: str
+    before_total_s: float
+    after_total_s: float
+    hotspots: list[HotspotModel] = Field(default_factory=list)
+
+
 class CommitModel(BaseModel):
     index: int
     sha: str
@@ -146,6 +170,7 @@ class JobState(BaseModel):
     # `tests_guard` is what actually happened: "active" (suite green on the
     # regressed commit, so it can judge patches), "baseline_failing" (already red
     # before any patch — can't judge), or "unavailable" (couldn't run it here).
+    profile: ProfileModel | None = None
     test_command: str | None = None
     tests_guard: Literal["active", "baseline_failing", "unavailable"] | None = None
 

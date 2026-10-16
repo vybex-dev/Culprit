@@ -247,6 +247,18 @@ function applyEnd(row: TermRow, ev: LogEvent): TermRow {
       };
       break;
     }
+    case "profile.end": {
+      const skipped = d.ok === false;
+      out.glyph = skipped ? "dot" : "ok";
+      out.tone = skipped ? "muted" : "iris";
+      out.chips = [
+        skipped
+          ? { label: "skipped", tone: "muted", title: str(d.reason) }
+          : { label: "measured", tone: "iris", title: "cProfile call counts and cumulative times, before vs after the guilty commit" },
+      ];
+      out.meta = dur !== null ? fmtDur(dur) : undefined;
+      break;
+    }
     case "tests.end": {
       const guard = str(d.guard);
       const active = guard === "active";

@@ -98,6 +98,19 @@ def render_report(job: JobState, metrics: dict[str, Any] | None = None) -> str:
                 add(f"- [{r.title}]({r.url}){score}")
             add("")
 
+    pr = job.profile
+    if pr and pr.hotspots:
+        add("### Measured evidence (cProfile)\n")
+        add(f"Profiled one run of `{job.benchmark_command}` on the last good commit (`{pr.before_commit[:8]}`) and on "
+            f"the guilty one (`{pr.after_commit[:8]}`). Functions that grew the most:\n")
+        add("| Function | Calls | Cumulative |")
+        add("|---|--:|--:|")
+        for h in pr.hotspots[:6]:
+            ratio = f" (×{h.calls_after / h.calls_before:.0f})" if h.calls_before and h.calls_after >= 2 * h.calls_before else ""
+            add(f"| `{h.func}` | {h.calls_before:,} → {h.calls_after:,}{ratio} | "
+                f"{h.cum_before_s * 1000:,.1f} → {h.cum_after_s * 1000:,.1f} ms |")
+        add("\n<sub>Profiler overhead inflates absolute times; read call counts and relative growth.</sub>\n")
+
     if job.fix:
         add("## Proposed fix\n")
         if verified:

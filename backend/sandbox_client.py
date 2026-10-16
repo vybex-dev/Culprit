@@ -86,6 +86,17 @@ class BenchmarkResult:
 
 
 @dataclass
+class ProfileRun:
+    """Raw cProfile dumps (one per Python process the benchmark started) from a
+    single profiled run of the benchmark. Parsing happens on the host
+    (profiler.py); a backend only has to fetch the bytes."""
+    commit_sha: str
+    blobs: list[bytes]
+    root: str  # checkout directory the profiled code ran from, to relativize paths
+    stdout_tail: str = ""
+
+
+@dataclass
 class SuiteResult:
     """Outcome of running a user's *test command* (correctness guard) on a
     commit, optionally with a patch applied. `passed` is True only for a clean
@@ -163,6 +174,16 @@ class Sandbox(ABC):
         supplies a test command needs a backend that implements this.
         """
         raise SandboxError(f"{type(self).__name__} does not support running a test command")
+
+    def profile(self, commit_sha: str, benchmark_command: str) -> ProfileRun:
+        """Run benchmark_command ONCE under cProfile (via a sitecustomize shim,
+        so the command itself is untouched) and return the raw dumps.
+
+        Evidence only: the profiled run's timing is never used as a benchmark
+        score. Not abstract, for the same reason as run_tests(): older Sandbox
+        subclasses keep working, and a backend that can't profile just raises.
+        """
+        raise SandboxError(f"{type(self).__name__} does not support profiling")
 
 
 class LocalGitSandbox(Sandbox):
@@ -398,6 +419,60 @@ class LocalGitSandbox(Sandbox):
                 shutil.rmtree(venv_dir, ignore_errors=True)
 
 
+    def profile(self, commit_sha: str, benchmark_command: str) -> ProfileRun:
+        from profiler import SITECUSTOMIZE
+
+        timeout_s = int(os.environ.get("BENCHMARK_RUN_TIMEOUT_S", "60")) * 3  # profiling is slower
+        worktree = Path(tempfile.mkdtemp(prefix=f"prd_pw_{commit_sha[:8]}_"))
+        worktree.rmdir()  # `git worktree add` requires the target not exist yet
+        scratch = Path(tempfile.mkdtemp(prefix="prd_prof_"))
+        venv_dir: Path | None = None
+        venv_is_ephemeral = False
+        try:
+            try:
+                proc = subprocess.run(
+                    ["git", "worktree", "add", "--detach", str(worktree), commit_sha],
+                    cwd=self.repo_path, capture_output=True, text=True, timeout=60,
+                )
+            except subprocess.TimeoutExpired as e:
+                raise SandboxError(f"checkout timed out (60s) for {commit_sha}") from e
+            if proc.returncode != 0:
+                raise SandboxError(f"checkout failed for {commit_sha}: {proc.stderr}")
+            lock_hash = self._lockfile_hash(worktree)
+            venv_dir, venv_is_ephemeral = self._venv_for_hash(lock_hash, worktree)
+
+            shim = scratch / "shim"
+            out = scratch / "out"
+            shim.mkdir()
+            out.mkdir()
+            (shim / "sitecustomize.py").write_text(SITECUSTOMIZE)
+            py_path = str(shim) + (os.pathsep + os.environ["PYTHONPATH"] if os.environ.get("PYTHONPATH") else "")
+            try:
+                run = subprocess.run(
+                    benchmark_command, shell=True, cwd=worktree, capture_output=True, text=True, timeout=timeout_s,
+                    env={**os.environ, "PATH": f"{venv_dir}/bin:{os.environ['PATH']}",
+                         "PYTHONPATH": py_path, "CULPRIT_PROFILE_DIR": str(out)},
+                )
+            except subprocess.TimeoutExpired as e:
+                raise BenchmarkRunError(f"profiled run timed out after {timeout_s}s for {commit_sha}",
+                                        detail=f"timed out after {timeout_s}s") from e
+            if run.returncode != 0:
+                raise BenchmarkRunError(f"profiled run failed for {commit_sha}: {run.stderr[-1000:]}",
+                                        detail=run.stderr[-1000:])
+            blobs = [p.read_bytes() for p in sorted(out.glob("*.prof"))]
+            log.info("sandbox.profile", commit=commit_sha, files=len(blobs))
+            return ProfileRun(commit_sha=commit_sha, blobs=blobs, root=str(worktree),
+                              stdout_tail=run.stdout.strip()[-300:])
+        finally:
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", str(worktree)],
+                cwd=self.repo_path, capture_output=True, text=True,
+            )
+            shutil.rmtree(scratch, ignore_errors=True)
+            if venv_dir is not None and venv_is_ephemeral:
+                shutil.rmtree(venv_dir, ignore_errors=True)
+
+
 class TokenFactorySandbox(Sandbox):
     """Real backend: Nebius Token Factory Sandboxes (ConTree) over plain HTTPS.
 
@@ -576,6 +651,24 @@ echo "CULPRIT_TEST_EXIT=$code"
 exit 0
 """
 
+    _PROFILE_SCRIPT = r"""set -e
+mkdir -p /work && cd /work
+base64 -d | tar xz -C /work
+for f in requirements.txt requirements.lock; do
+  if [ -f "$f" ]; then pip install -q -r "$f" 1>&2; break; fi
+done
+mkdir -p /tmp/culprit_sc /tmp/culprit_prof
+printf '%s' "$CULPRIT_SITECUSTOMIZE_B64" | base64 -d > /tmp/culprit_sc/sitecustomize.py
+set +e
+PYTHONPATH="/tmp/culprit_sc${PYTHONPATH:+:$PYTHONPATH}" CULPRIT_PROFILE_DIR=/tmp/culprit_prof sh -c "$CULPRIT_BENCH" 1>&2
+code=$?
+for f in /tmp/culprit_prof/*.prof; do
+  if [ -f "$f" ]; then echo "CULPRIT_PROF=$(base64 -w0 "$f")"; fi
+done
+echo "CULPRIT_PROFILE_EXIT=$code"
+exit 0
+"""
+
     def _run(self, commit_sha: str, benchmark_command: str, n_runs: int, patch: str | None) -> BenchmarkResult:
         image = self._resolve_image()
         env = {"CULPRIT_N_RUNS": str(n_runs), "CULPRIT_BENCH": benchmark_command}
@@ -708,6 +801,60 @@ exit 0
         self._notify("tests", commit=commit_sha, passed=suite.passed, exit_code=suite.exit_code,
                      dur_s=suite.duration_s, patched=patch is not None, timed_out=suite.timed_out)
         return suite
+
+
+    def profile(self, commit_sha: str, benchmark_command: str) -> ProfileRun:
+        from profiler import SITECUSTOMIZE
+
+        image = self._resolve_image()
+        env = {
+            "CULPRIT_BENCH": benchmark_command,
+            "CULPRIT_SITECUSTOMIZE_B64": base64.b64encode(SITECUSTOMIZE.encode()).decode("ascii"),
+        }
+        body = {
+            "command": self._PROFILE_SCRIPT, "shell": True, "image": image, "disposable": True,
+            "env": env, "timeout": self.timeout_s,
+            "stdin": {"value": self._git_archive_b64(commit_sha), "encoding": "ascii", "close": True},
+            "networking": {"enabled": True},
+        }
+        r = self._post("/instances", body)
+        op_id = r.headers.get("Location", "").rsplit("/", 1)[-1] or r.json().get("uuid")
+        if not op_id:
+            raise SandboxError("sandbox API did not return an operation id")
+        self._notify("instance", phase="start", commit=commit_sha, operation=op_id,
+                     patched=False, disposable=True, image=image)
+        t_vm = time.perf_counter()
+        op = self._wait(op_id)
+        self._notify("instance", phase="end", commit=commit_sha, operation=op_id,
+                     status=op.get("status"), dur_s=round(time.perf_counter() - t_vm, 3))
+
+        result = (op.get("metadata") or {}).get("result") or {}
+        stdout = self._decode(result.get("stdout"))
+        stderr = self._decode(result.get("stderr"))
+        state = result.get("state") or {}
+        if op.get("status") != "SUCCESS" or state.get("timed_out") or state.get("exit_code") not in (0, None):
+            raise SandboxError(
+                f"sandbox profile run failed for {commit_sha} (status={op.get('status')}, "
+                f"exit={state.get('exit_code')}, error={op.get('error')}): {stderr[-1500:]}"
+            )
+        blobs: list[bytes] = []
+        code: int | None = None
+        for line in stdout.splitlines():
+            if line.startswith("CULPRIT_PROF="):
+                try:
+                    blobs.append(base64.b64decode(line.split("=", 1)[1]))
+                except Exception:  # noqa: BLE001 — a damaged dump is skipped, not trusted
+                    continue
+            elif line.startswith("CULPRIT_PROFILE_EXIT="):
+                try:
+                    code = int(line.split("=", 1)[1])
+                except ValueError:
+                    code = None
+        if code != 0:
+            raise BenchmarkRunError(f"profiled run failed for {commit_sha} (exit {code}): {stderr[-1000:]}",
+                                    detail=stderr[-1000:])
+        log.info("sandbox.profile", backend="token_factory", commit=commit_sha, files=len(blobs), operation=op_id)
+        return ProfileRun(commit_sha=commit_sha, blobs=blobs, root="/work")
 
 
 def get_sandbox(repo_url_or_path: str, use_token_factory: bool = False) -> Sandbox:

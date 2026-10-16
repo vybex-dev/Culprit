@@ -53,7 +53,7 @@ Performance regressions hide in innocent-looking commits — _"refactor: simplif
 Give Culprit **a repository** and **a benchmark command**. It will:
 
 1. **Bisect** the commit history — every candidate commit benchmarked in a _fresh, isolated_ **Token Factory Sandbox** — to find the exact commit where the benchmark crossed a regression threshold.
-2. **Diagnose** the guilty diff with **NVIDIA Nemotron 3 Ultra**, forced to cite the specific lines responsible (each citation is checked against the real diff), and ground the finding with **Tavily** web search.
+2. **Measure, then diagnose.** It profiles the benchmark (cProfile, via a `sitecustomize` shim — your command is untouched) on the last good commit and the guilty one, so the diagnosis can quote real call counts ("`query`: 6 → 186 calls"). Then **NVIDIA Nemotron 3 Ultra** diagnoses the guilty diff, forced to cite the specific lines responsible (each citation is checked against the real diff), and ground the finding with **Tavily** web search.
 3. **Fix** it: Nemotron 3 Ultra proposes an exact-text edit, which is turned into a real unified diff.
 4. **Prove** it: the benchmark is re-run on the _patched_ code in a sandbox. The fix is called **"verified" only if that re-run actually came back within threshold.**
 5. **Stream everything** to a live dashboard — every git call, sandbox run and model request, with raw responses one click away — and export a PR-ready write-up and a real `.patch`.
@@ -193,6 +193,7 @@ These are enforced in code (see `AGENTS.md`, rule 1), not just promised:
 - Benchmark numbers come **only** from real runs. "Verified" mirrors a real sandbox verdict and nothing else.
 - A fix that doesn't resolve the regression is reported as **unresolved**, with all attempts — never dressed up.
 - A patch that crashes is a failed attempt with **no score**.
+- Profile evidence is **measured or absent** — a non-Python benchmark, a crash, or a backend that can't profile means "no profile" (shown as skipped), never an estimate; it can't fail a job. `CULPRIT_PROFILE=0` turns it off.
 - **A fast-but-broken patch is not a fix.** If you pass a `test_command`, it must be green on the regressed commit (so it can actually judge) *and* on the patched code — otherwise the attempt is rejected, the failure output is fed back to Nemotron, and the job never says "verified". If the suite is already red or can't run, Culprit says so and verifies on performance only.
 - A diagnosis whose cited lines aren't in the diff is retried once, then downgraded to `other`.
 - Tavily results below the relevance floor are dropped, not cited.

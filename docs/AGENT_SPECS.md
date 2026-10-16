@@ -87,6 +87,21 @@ Return ONLY JSON matching this schema:
 }
 ```
 
+**Optional input — `profile_evidence`** (additive; present only when profiling succeeded)
+
+```
+"profile_evidence": {
+  "before_commit": "<last good sha>", "after_commit": "<guilty sha>",
+  "before_total_s": 0.0, "after_total_s": 0.0,
+  "hotspots": [{"func": "app/db.py:query", "calls_before": 6, "calls_after": 186,
+                "cum_before_s": 0.01, "cum_after_s": 0.29, "...": "..."}]
+}
+```
+
+When present, `PROFILE_EVIDENCE_ADDENDUM` (in `backend/diagnoser.py`) is appended to the system prompt below. The
+**output schema is unchanged** — `cited_lines` must still be verbatim diff lines; the profile only grounds the
+explanation and confidence. Without it the prompt is exactly the one below.
+
 **System prompt**
 
 ```

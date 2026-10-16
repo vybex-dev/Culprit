@@ -100,6 +100,7 @@ from dotenv import load_dotenv
 # win over .env, so a one-off `export` keeps working as an override.
 load_dotenv(Path(__file__).with_name(".env"))
 
+import profiler
 from bisector import ProbeRecord, bisect_repo
 from demo_repo import BENCHMARK_COMMAND as DEMO_BENCHMARK_COMMAND, build_demo_repo
 from diagnoser import DiagnosisResult, diagnose
@@ -122,6 +123,7 @@ from schema import (  # noqa: F401 — re-exported: `from api import InMemoryJob
     JobStore,
     JobSummary,
     ProbeModel,
+    ProfileModel,
     SqliteEventStore,
     SqliteJobStore,
     TavilyRefModel,
@@ -136,6 +138,9 @@ _DEFAULT_N_RUNS = int(os.environ.get("BENCHMARK_N_RUNS", "5"))
 _USE_TOKEN_FACTORY = os.environ.get("USE_TOKEN_FACTORY") == "1"
 _AUTO_RANGE_COMMITS = int(os.environ.get("AUTO_RANGE_COMMITS", "30"))
 _MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", "2"))
+# Profile the last-good and guilty commits so the diagnosis rests on measured
+# call counts, not only on reading the diff. Best-effort; set CULPRIT_PROFILE=0 to skip.
+_PROFILE_ENABLED = os.environ.get("CULPRIT_PROFILE", "1") != "0"
 _MAX_DIFF_CHARS = int(os.environ.get("CULPRIT_MAX_DIFF_CHARS", "150000"))
 _MAX_CONTEXT_CHARS = int(os.environ.get("CULPRIT_MAX_CONTEXT_CHARS", "300000"))
 _MAX_FILE_CHARS = 120_000
@@ -337,6 +342,48 @@ def _cap(text: str, limit: int) -> str:
     return text[:limit] + f"\n… [truncated {len(text) - limit} chars]"
 
 
+def _collect_profile(
+    *, sandbox: Any, reporter: Reporter, commits: list[Any], guilty_sha: str, benchmark_command: str,
+) -> dict[str, Any] | None:
+    """Profile the benchmark on the commit just before the guilty one and on the
+    guilty commit, and diff them. Evidence only: any failure (non-Python
+    benchmark, crash, backend without profiling) is reported as "skipped" and
+    returns None — it never fails the job and is never filled in with a guess."""
+    idx = next((c.index for c in commits if c.sha == guilty_sha), None)
+    prev = next((c.sha for c in commits if idx is not None and c.index == idx - 1), None)
+    if prev is None:
+        return None
+    span = reporter.start(
+        "profile", "sandbox", "profiling the benchmark before and after the guilty commit (cProfile, 1 run each)",
+        before=prev, after=guilty_sha,
+    )
+    try:
+        sandbox.listener = sandbox_listener(reporter, lambda: {"phase": "profile"})
+        runs = []
+        for sha in (prev, guilty_sha):
+            reporter.check_cancelled()
+            runs.append(sandbox.profile(sha, benchmark_command))
+        before = profiler.summarize(runs[0].blobs, root=runs[0].root)
+        after = profiler.summarize(runs[1].blobs, root=runs[1].root)
+        evidence = profiler.build_evidence(before_commit=prev, after_commit=guilty_sha, before=before, after=after)
+    except JobCancelled:
+        raise
+    except Exception as e:  # noqa: BLE001 — evidence is optional by design
+        reason = str(e)[-300:] or type(e).__name__
+        log.warning("api.profile_skipped", reason=reason)
+        reporter.end(span, f"no profile — diagnosing from the diff alone ({reason})", ok=False, skipped=True, reason=reason)
+        return None
+    top = evidence["hotspots"][0] if evidence["hotspots"] else None
+    reporter.end(
+        span,
+        (f"hottest growth: {top['func']} — {top['calls_before']} → {top['calls_after']} calls" if top
+         else "profiled both commits — no function grew noticeably"),
+        ok=True, hotspots=evidence["hotspots"], before_total_s=evidence["before_total_s"],
+        after_total_s=evidence["after_total_s"],
+    )
+    return evidence if evidence["hotspots"] else None
+
+
 def _commit_diff_and_message(
     repo_path: Path, commit_sha: str, reporter: Reporter | None = None,
 ) -> tuple[str, str, list[str]]:
@@ -516,10 +563,21 @@ def _run_analysis(
         full_file_contents = _concat_file_contents_at_commit(repo_path, result.regression_commit, changed_paths)
         after_score = next(e.score for e in result.timeline if e.commit == result.regression_commit)
 
+        profile_evidence = (
+            _collect_profile(
+                sandbox=sandbox, reporter=reporter, commits=result.commits,
+                guilty_sha=result.regression_commit, benchmark_command=benchmark_command,
+            )
+            if _PROFILE_ENABLED else None
+        )
+        if profile_evidence:
+            rt.update(job_id, lambda j: setattr(j, "profile", ProfileModel(**profile_evidence)))
+
         diagnosis_result = diagnose(
             job_id=job_id, guilty_commit_sha=result.regression_commit, diff=diff,
             surrounding_context=full_file_contents, commit_message=commit_message,
             before_score=result.baseline_score, after_score=after_score, reporter=reporter,
+            **({"profile_evidence": profile_evidence} if profile_evidence else {}),
         )
         rt.update(job_id, lambda j: setattr(j, "diagnosis", _diagnosis_to_model(diagnosis_result)))
 

@@ -101,6 +101,21 @@ Return ONLY JSON matching this schema:
   "confidence": "high" | "medium" | "low"
 }"""
 
+# Appended (not merged into the constant above) only when measured profile
+# evidence is available — same additive pattern as the retry addendum below.
+# The OUTPUT schema is unchanged: cited_lines must still come from the diff.
+PROFILE_EVIDENCE_ADDENDUM = """The input also includes profile_evidence: a cProfile of the benchmark on the
+last good commit and on the guilty commit. It lists the functions whose cost
+grew the most (calls_before -> calls_after, cumulative seconds before ->
+after). It is MEASURED, not inferred.
+
+Use it to confirm or refute your reading of the diff. When it supports your
+category, quote the specific numbers (e.g. "calls rose from 6 to 186") in the
+explanation. If the profile contradicts your hypothesis, change your answer,
+lower your confidence, or use "other". Profiler overhead inflates absolute
+times; trust call counts and relative growth. cited_lines must still be exact
+lines from the diff — never cite the profile there."""
+
 # Appended (not merged into the constant above) only on the citation retry —
 # same pattern as models.py's own _RETRY_NUDGE, one level up the stack.
 CITATION_RETRY_ADDENDUM = """Your previous response's cited_lines did not verify: none of them matched
@@ -278,6 +293,7 @@ def diagnose(
     temperature: float = DIAGNOSER_TEMPERATURE,
     max_tavily_results: int = 3,
     reporter: Reporter | None = None,
+    profile_evidence: dict | None = None,
 ) -> DiagnosisResult:
     """The one entry point this module exposes. Raises DiagnoserError only
     for a genuinely schema-invalid Nemotron response; a citation that
@@ -292,6 +308,11 @@ def diagnose(
         "after_score": after_score,
     }
 
+    system_prompt = DIAGNOSER_SYSTEM_PROMPT
+    if profile_evidence and profile_evidence.get("hotspots"):
+        base_payload["profile_evidence"] = profile_evidence
+        system_prompt = f"{DIAGNOSER_SYSTEM_PROMPT}\n\n{PROFILE_EVIDENCE_ADDENDUM}"
+
     rep = or_null(reporter)
     extra = {"reporter": reporter} if reporter is not None else {}
     n_changed = sum(1 for l in diff.splitlines() if l[:1] in ("+", "-") and not l.startswith(("+++", "---")))
@@ -300,11 +321,12 @@ def diagnose(
         f"handing the guilty diff ({n_changed} changed lines, {len(surrounding_context):,} chars of file context) to Nemotron 3 Ultra",
         commit=guilty_commit_sha, changed_lines=n_changed, context_chars=len(surrounding_context),
         before_score=before_score, after_score=after_score,
+        **({"profile_hotspots": len(profile_evidence["hotspots"])} if "profile_evidence" in base_payload else {}),
     )
 
     result = call_nemotron(
         job_id=job_id, step="diagnose", model="ultra",
-        system_prompt=DIAGNOSER_SYSTEM_PROMPT, payload=base_payload, temperature=temperature, **extra,
+        system_prompt=system_prompt, payload=base_payload, temperature=temperature, **extra,
     )
     diagnosis = _validate_schema(result.parsed, guilty_commit_sha=guilty_commit_sha)
     diagnosis.diff = diff
@@ -344,7 +366,7 @@ def diagnose(
         }
         result = call_nemotron(
             job_id=job_id, step="diagnose:citation_retry", model="ultra",
-            system_prompt=f"{DIAGNOSER_SYSTEM_PROMPT}\n\n{CITATION_RETRY_ADDENDUM}",
+            system_prompt=f"{system_prompt}\n\n{CITATION_RETRY_ADDENDUM}",
             payload=retry_payload, temperature=temperature, **extra,
         )
         diagnosis = _validate_schema(result.parsed, guilty_commit_sha=guilty_commit_sha)
