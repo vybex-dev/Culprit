@@ -122,6 +122,14 @@ class CommitModel(BaseModel):
     date: str = ""
 
 
+class SkippedModel(BaseModel):
+    """A commit the search stepped over because it couldn't be built or run."""
+    index: int
+    sha: str
+    reason: str = ""
+    step: int = 0
+
+
 class ProbeModel(BaseModel):
     step: int
     commit: str
@@ -171,6 +179,7 @@ class JobState(BaseModel):
     # regressed commit, so it can judge patches), "baseline_failing" (already red
     # before any patch — can't judge), or "unavailable" (couldn't run it here).
     profile: ProfileModel | None = None
+    skipped: list[SkippedModel] = Field(default_factory=list)
     test_command: str | None = None
     tests_guard: Literal["active", "baseline_failing", "unavailable"] | None = None
 

@@ -87,3 +87,19 @@ test("a stopped search claims no speedup — it found nothing", () => {
   // …but the same probes on a search that completed do converge
   assert.equal(scannerStats(commits, probes, null, true).converged, true);
 });
+
+test("a skipped commit is shown as skipped — never inferred, never measured", () => {
+  const commits: Commit[] = Array.from({ length: 8 }, (_, i) => ({ index: i, sha: `s${i}`, subject: "", author: "", date: "" }));
+  const probe = (index: number, verdict: string): Probe => ({
+    step: index, commit: `s${index}`, index, role: index === 0 ? "baseline" : "bisect", raw_scores: [1], median_score: 1,
+    pct_change: 0, verdict, rounds: 1, nano: [], timestamp: "", wall_s: 0,
+  });
+  const probes = [probe(0, "baseline"), probe(7, "regressed"), probe(5, "clean")];
+  const cells = buildCells(commits, probes, [6, 6], null, false, [{ index: 3, sha: "s3", reason: "boom", step: 2 }]);
+  assert.equal(cells[3].state, "skipped");
+  assert.equal(cells[3].probe, null);
+  assert.equal(cells[3].skipReason, "boom");
+  assert.equal(cells[2].state, "inferred-clean"); // unaffected neighbours behave as before
+  // and with nothing skipped the scanner is unchanged
+  assert.equal(buildCells(commits, probes, [6, 6], null, false)[3].state, "inferred-clean");
+});

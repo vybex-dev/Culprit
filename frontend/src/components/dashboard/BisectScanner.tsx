@@ -25,6 +25,7 @@ const CELL_STYLE: Record<CellState, string> = {
   clean: "bg-resolved text-paper",
   regressed: "bg-unresolved text-paper",
   guilty: "bg-butter text-ink border border-butter-700 guilty-pulse",
+  skipped: "border border-dashed border-butter-700/70 bg-butter/25 text-transparent",
   suspect: "border border-dashed border-iris/60 bg-iris-100/70 text-iris",
   "inferred-clean": "border border-resolved/25 bg-resolved/10 text-transparent",
   "inferred-regressed": "border border-unresolved/25 bg-unresolved/10 text-transparent",
@@ -124,11 +125,20 @@ function CommitDetail({ cell, baseline }: { cell: Cell; baseline: number | null 
           </div>
         </div>
       ) : (
-        <p className="mt-2 text-xs text-muted">
-          {cell.state.startsWith("inferred")
-            ? "Never benchmarked — ruled out by bisection's single-regression assumption, not by a measurement."
-            : "Not benchmarked yet."}
-        </p>
+        <>
+          <p className="mt-2 text-xs text-muted">
+            {cell.state === "skipped"
+              ? "This commit couldn't be built or run, so the search stepped over it (like git bisect skip) — it is neither measured nor assumed clean."
+              : cell.state.startsWith("inferred")
+                ? "Never benchmarked — ruled out by bisection's single-regression assumption, not by a measurement."
+                : "Not benchmarked yet."}
+          </p>
+          {cell.state === "skipped" && cell.skipReason && (
+            <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap rounded-md border border-line bg-surface p-2 font-mono text-[11px] text-muted">
+              {cell.skipReason}
+            </pre>
+          )}
+        </>
       )}
     </div>
   );
@@ -143,7 +153,9 @@ export function BisectScanner({ job, className }: { job: JobState; className?: s
 
   if (commits.length === 0) return null;
 
-  const cells = buildCells(commits, probes, job.window, job.regression_commit, done && job.regression_commit === null);
+  const cells = buildCells(
+    commits, probes, job.window, job.regression_commit, done && job.regression_commit === null, job.skipped ?? [],
+  );
   const stats = scannerStats(commits, probes, job.regression_commit, done);
   const guilty = cells.find((c) => c.state === "guilty") ?? null;
   const baseline = job.baseline_score ?? probes.find((p) => p.step === 0)?.median_score ?? null;
@@ -239,6 +251,7 @@ export function BisectScanner({ job, className }: { job: JobState; className?: s
         <LegendSwatch state="regressed" label="measured regressed" />
         <LegendSwatch state="guilty" label="guilty" />
         <LegendSwatch state="suspect" label="suspect" />
+        {cells.some((c) => c.state === "skipped") && <LegendSwatch state="skipped" label="skipped (unrunnable)" />}
         <LegendSwatch state="inferred-clean" label="inferred" />
         <span className="text-muted/70">solid = measured in a sandbox · faint = ruled out by reasoning, never run</span>
       </div>

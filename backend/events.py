@@ -184,7 +184,10 @@ def summarize(events: list[Event] | list[dict[str, Any]]) -> dict[str, Any]:
             if data.get("patched"):
                 sandbox["patched_runs"] += 1
         elif kind == "probe.end":
-            sandbox["probes"] += 1
+            if data.get("verdict") == "skipped":
+                sandbox["skipped"] = sandbox.get("skipped", 0) + 1  # attempted, but not a measured probe
+            else:
+                sandbox["probes"] += 1
         elif kind == "sandbox.instance.end":
             sandbox["instances"] += 1
         elif kind == "tavily.end":

@@ -77,6 +77,13 @@ class BenchmarkRunError(SandboxError):
         self.detail = detail
 
 
+class DependencyInstallError(SandboxError):
+    """Installing a commit's dependencies failed or timed out (a broken or
+    unpinnable requirements file at that commit). A SandboxError subclass, so
+    every existing handler still applies; the bisector treats it, like
+    BenchmarkRunError, as "this commit can't be run" and may skip it."""
+
+
 @dataclass
 class BenchmarkResult:
     commit_sha: str
@@ -260,10 +267,10 @@ class LocalGitSandbox(Sandbox):
                 )
             except subprocess.TimeoutExpired as e:
                 shutil.rmtree(venv_dir, ignore_errors=True)
-                raise SandboxError(f"dependency install timed out (300s) for {lockfile.name}") from e
+                raise DependencyInstallError(f"dependency install timed out (300s) for {lockfile.name}") from e
             if proc.returncode != 0:
                 shutil.rmtree(venv_dir, ignore_errors=True)
-                raise SandboxError(f"dependency install failed: {proc.stderr[-2000:]}")
+                raise DependencyInstallError(f"dependency install failed: {proc.stderr[-2000:]}")
 
     def _apply_patch(self, worktree: Path, patch: str) -> None:
         try:

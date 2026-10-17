@@ -148,6 +148,10 @@ def render_report(job: JobState, metrics: dict[str, Any] | None = None) -> str:
             f"(a linear scan needs {max(len(job.commits) - 1, 1)}). Each probe ran {job.n_runs or '?'}× in a fresh, "
             "isolated sandbox; the median is compared to the baseline against a "
             f"{job.threshold_pct or 15:g}% threshold.\n")
+        if job.skipped:
+            add(f"**{len(job.skipped)} commit(s) could not be built or run and were skipped** (as `git bisect skip` would): "
+                + ", ".join(f"`{k.sha[:8]}`" for k in job.skipped) + ". They were neither measured nor assumed clean — the search "
+                "continued on their nearest runnable neighbours.\n")
         add("| # | Commit | Subject | Median | Δ baseline | Verdict |")
         add("|--:|---|---|--:|--:|---|")
         subj = {c.sha: c.subject for c in job.commits}

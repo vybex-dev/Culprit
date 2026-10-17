@@ -123,8 +123,8 @@ def summarize(blobs: list[bytes], *, root: str, top: int = 40) -> dict[str, Any]
 
 
 def diff_profiles(before: dict[str, Any], after: dict[str, Any], *, top: int = 8) -> list[dict[str, Any]]:
-    """The functions that got the most expensive between the two profiles,
-    ranked by added cumulative time. Both runs carry the same profiler
+    """The functions that got the most expensive between the two profiles
+    (call-count explosions first, then by added cumulative time). Both runs carry the same profiler
     overhead, so the *comparison* is fair even though absolute times aren't
     the benchmark's real numbers (those come from the unprofiled runs)."""
     b = {(f["func"], f["line"]): f for f in before["functions"]}
@@ -144,7 +144,15 @@ def diff_profiles(before: dict[str, Any], after: dict[str, Any], *, top: int = 8
             "self_before_s": round(self_b, 6), "self_after_s": round(f["self_s"], 6),
             "_added": added,
         })
-    rows.sort(key=lambda r: r["_added"], reverse=True)
+    # Call-count explosions are the most diagnostic evidence (N+1, a loop that
+    # grew), and — unlike small absolute times — they don't wobble with machine
+    # load. So: those first, the repo's own code before library code, then by
+    # how much cumulative time was added.
+    def _rank(r: dict[str, Any]) -> tuple[int, int, float]:
+        exploded = r["calls_after"] >= 2 * max(r["calls_before"], 1) and r["calls_after"] - r["calls_before"] >= 3
+        return (0 if exploded else 1, 0 if r["project"] else 1, -r["_added"])
+
+    rows.sort(key=_rank)
     for r in rows:
         del r["_added"]
     return rows[:top]

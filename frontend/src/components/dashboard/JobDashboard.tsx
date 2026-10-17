@@ -142,6 +142,7 @@ export function JobDashboard({
             baseline={job.baseline_score}
             thresholdPct={job.threshold_pct}
             fix={fix}
+            skipped={job.skipped?.length ?? 0}
           />
           <Terminal
             events={logEvents}

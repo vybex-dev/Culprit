@@ -124,6 +124,7 @@ from schema import (  # noqa: F401 — re-exported: `from api import InMemoryJob
     JobSummary,
     ProbeModel,
     ProfileModel,
+    SkippedModel,
     SqliteEventStore,
     SqliteJobStore,
     TavilyRefModel,
@@ -533,11 +534,18 @@ def _run_analysis(
         def _on_window(lo: int, hi: int) -> None:
             rt.update(job_id, lambda j: setattr(j, "window", [lo, hi]))
 
+        def _on_skip(sk) -> None:
+            rt.update(job_id, lambda j: setattr(j, "skipped", [
+                *[x for x in j.skipped if x.sha != sk.sha],
+                SkippedModel(index=sk.index, sha=sk.sha, reason=sk.reason, step=sk.step),
+            ]))
+
         result = bisect_repo(
             job_id=job_id, repo_path=str(repo_path), start_sha=start_sha, end_sha=end_sha,
             benchmark_command=benchmark_command, sandbox=sandbox,
             regression_threshold_pct=regression_threshold_pct, n_runs=n_runs,
             reporter=reporter, on_probe=_on_probe, on_plan=_on_plan, on_window=_on_window,
+            on_skip=_on_skip,
         )
 
         def _bisect_done(j: JobState) -> None:

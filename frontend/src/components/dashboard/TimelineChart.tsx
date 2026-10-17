@@ -98,6 +98,7 @@ export function TimelineChart({
   baseline,
   thresholdPct,
   fix,
+  skipped = 0,
   className,
 }: {
   timeline: TimelineEntry[];
@@ -112,6 +113,8 @@ export function TimelineChart({
   thresholdPct?: number | null;
   /** The proposed fix's measured score. `verified` only ever mirrors a real re-run. */
   fix?: { afterScore: number; verified: boolean } | null;
+  /** How many commits couldn't be run and were skipped by the search. */
+  skipped?: number;
   className?: string;
 }) {
   const reduceMotion = useReducedMotion();
@@ -421,6 +424,7 @@ export function TimelineChart({
       </div>
       <p className="line-clamp-3 shrink-0 px-4 pb-3 text-[11px] text-muted/80">
         {n > points.length ? `${n - points.length} of ${n} commits were never run — the search ruled them out. ` : ""}
+        {skipped > 0 ? `${skipped} couldn't be built or run and ${skipped === 1 ? "was" : "were"} skipped. ` : ""}
         Dashed segments cross commits that were never run — the slope there is not a measurement.
       </p>
     </div>

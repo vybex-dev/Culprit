@@ -197,7 +197,7 @@ These are enforced in code (see `AGENTS.md`, rule 1), not just promised:
 - **A fast-but-broken patch is not a fix.** If you pass a `test_command`, it must be green on the regressed commit (so it can actually judge) *and* on the patched code — otherwise the attempt is rejected, the failure output is fed back to Nemotron, and the job never says "verified". If the suite is already red or can't run, Culprit says so and verifies on performance only.
 - A diagnosis whose cited lines aren't in the diff is retried once, then downgraded to `other`.
 - Tavily results below the relevance floor are dropped, not cited.
-- Infrastructure failures fail the job **loudly**; nothing is silently skipped.
+- Infrastructure failures fail the job **loudly**. Only a *commit* that can't be built or run is skipped — visibly, and never given a verdict.
 - Offline mode (below) is **labelled on every event, job record, page and PR report**, and is never selected implicitly — a missing API key in normal mode is a hard error.
 
 ---
@@ -467,7 +467,7 @@ Read these before trusting a result.
 
 - **Live Nebius path validation.** The live Token Factory path is covered by unit tests with mocked HTTP and checked against Nebius's published docs, but model IDs and sandbox response shapes are exactly what `GET /preflight` exists to confirm on first run against your account.
 - **One monotonic regression assumed** (clean … clean, regressed … regressed). Flaky or non-monotonic histories can mislead bisection; the scanner labels unmeasured commits as _inferred_ for this reason.
-- **Unrunnable commits fail the job** — there is no `git bisect skip` yet.
+- **Unrunnable commits are skipped, not scored.** A midpoint that can't be built or run (a failing install, a crashing benchmark) is stepped over like `git bisect skip`: the search probes its nearest runnable neighbour and the commit is shown as _skipped_ — neither measured nor assumed clean. If the skips leave *no* single commit that can be named, the job fails with the list of suspects instead of guessing. The baseline and the end of the range must still be runnable.
 - **Noise is managed, not eliminated** (repeated runs + Nano/arithmetic cross-check). Very small regressions near the threshold need more runs.
 - **Python-first.** Depth on one ecosystem was chosen over breadth.
 - **Bundled demo is constructed.** The sample repo is a real git history with a real, measured regression, but it is a reproducible smoke test, not a substitute for real-OSS cases. `demo_cases/` holds templates for curated real-world regressions with verified ground truth.

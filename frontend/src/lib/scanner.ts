@@ -14,13 +14,14 @@
 // Only `import type` + relative `.ts` imports, so Node can run it under
 // `node --test` directly.
 
-import type { Commit, Probe } from "./types.ts";
+import type { Commit, Probe, SkippedCommit } from "./types.ts";
 
 export type CellState =
   | "baseline" // measured: the known-good starting point
   | "clean" // measured: within threshold of baseline
   | "regressed" // measured: beyond threshold
   | "guilty" // the first regressed commit — the answer
+  | "skipped" // couldn't be built/run — stepped over (git bisect skip); neither measured nor assumed
   | "suspect" // inside the search window, not yet measured
   | "inferred-clean" // before a clean probe: assumed clean (monotonic assumption)
   | "inferred-regressed"; // after a regressed probe: assumed regressed
@@ -34,6 +35,8 @@ export interface Cell {
   state: CellState;
   /** The probe that measured this commit, if any. */
   probe: Probe | null;
+  /** Why the commit was skipped (only when state === "skipped"). */
+  skipReason?: string;
 }
 
 export interface ScannerStats {
@@ -58,9 +61,11 @@ export function buildCells(
   window: [number, number] | null | undefined,
   regressionSha: string | null,
   completedClean: boolean,
+  skipped: SkippedCommit[] = [],
 ): Cell[] {
   const byIndex = new Map<number, Probe>();
   for (const p of probes) byIndex.set(p.index, p);
+  const skippedBySha = new Map(skipped.map((s) => [s.sha, s]));
 
   const n = commits.length;
   // Before the endpoint probe reports a window, everything after the start is
@@ -73,11 +78,15 @@ export function buildCells(
     if (regressionSha && c.sha === regressionSha) state = "guilty";
     else if (probe) state = probe.verdict === "baseline" ? "baseline" : probe.verdict === "regressed" ? "regressed" : "clean";
     else if (c.index === 0) state = "baseline";
+    else if (skippedBySha.has(c.sha)) state = "skipped"; // tried and unrunnable: never "inferred"
     else if (completedClean) state = "inferred-clean"; // ran to completion, nothing regressed
     else if (c.index < lo) state = "inferred-clean";
     else if (c.index > hi) state = "inferred-regressed";
     else state = "suspect";
-    return { index: c.index, sha: c.sha, subject: c.subject, author: c.author, date: c.date, state, probe };
+    return {
+      index: c.index, sha: c.sha, subject: c.subject, author: c.author, date: c.date, state, probe,
+      ...(state === "skipped" ? { skipReason: skippedBySha.get(c.sha)?.reason } : {}),
+    };
   });
 }
 
@@ -101,6 +110,7 @@ export const STATE_LABEL: Record<CellState, string> = {
   clean: "clean (measured)",
   regressed: "regressed (measured)",
   guilty: "guilty commit",
+  skipped: "couldn't be built or run — skipped",
   suspect: "still a suspect",
   "inferred-clean": "assumed clean — before a clean probe",
   "inferred-regressed": "assumed regressed — after a regressed probe",

@@ -192,6 +192,14 @@ function applyEnd(row: TermRow, ev: LogEvent): TermRow {
   switch (ev.kind) {
     case "probe.end": {
       const verdict = str(d.verdict);
+      if (verdict === "skipped") {
+        out.glyph = "warn";
+        out.tone = "warn";
+        out.chips = [{ label: "skipped", tone: "warn", title: str(d.reason) }];
+        out.detail = d.reason ? { type: "text", text: str(d.reason) } : undefined;
+        out.meta = dur !== null ? fmtDur(dur) : undefined;
+        break;
+      }
       const median = num(d.median);
       const pct = num(d.pct_change);
       const bad = verdict === "regressed";
@@ -359,6 +367,8 @@ function describePoint(ev: LogEvent): TermRow {
         chips: size !== null ? [{ label: size === 0 ? "converged" : `${size} left`, tone: size === 0 ? "good" : "muted" }] : undefined,
       });
     }
+    case "bisect.skip":
+      return base(ev, { glyph: "warn", tone: "warn", chips: [{ label: "skipped", tone: "warn" }] });
     case "bisect.done":
       return base(ev, { glyph: d.regression_commit ? "warn" : "ok", tone: d.regression_commit ? "accent" : "good", emphasis: true });
     case "sandbox.checkout":

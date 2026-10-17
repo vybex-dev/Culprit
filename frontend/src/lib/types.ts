@@ -109,6 +109,15 @@ export interface Profile {
   hotspots: Hotspot[];
 }
 
+/** A commit the search stepped over because it couldn't be built or run
+ * (`git bisect skip`). It is neither measured nor assumed clean. */
+export interface SkippedCommit {
+  index: number;
+  sha: string;
+  reason: string;
+  step: number;
+}
+
 export interface Fix {
   patch_diff: string;
   verified: boolean;
@@ -158,6 +167,8 @@ export interface JobState {
   cancel_requested?: boolean;
   metrics?: Metrics | null;
   label?: string | null;
+  /** Commits the search had to skip because they couldn't be run. */
+  skipped?: SkippedCommit[];
   /** Profile of the benchmark before vs at the guilty commit; absent when it
    * couldn't be taken (e.g. a non-Python benchmark) — never estimated. */
   profile?: Profile | null;

@@ -52,7 +52,7 @@ import structlog
 
 from events import Reporter, or_null, sandbox_listener
 from models import call_nemotron
-from sandbox_client import Sandbox
+from sandbox_client import BenchmarkRunError, DependencyInstallError, Sandbox
 
 log = structlog.get_logger("bisector")
 
@@ -86,6 +86,43 @@ class BisectionError(Exception):
     SandboxError/NemotronCallError, which propagate unwrapped from their
     own modules — callers can tell "the search logic gave up" apart from
     "the sandbox/API call itself failed"."""
+
+
+class CommitUnrunnable(Exception):
+    """One commit can't be benchmarked (build/dependency/benchmark failure at
+    that revision). Raised by an `evaluate` callable, handled inside bisect():
+    like `git bisect skip`, the search steps to a neighbouring commit instead
+    of guessing a verdict for this one."""
+
+    def __init__(self, commit: str, reason: str = "") -> None:
+        super().__init__(f"{commit[:10]} could not be run: {reason}" if reason else f"{commit[:10]} could not be run")
+        self.commit = commit
+        self.reason = reason
+
+
+class BisectionAmbiguous(BisectionError):
+    """Skipped commits made it impossible to name ONE guilty commit: every
+    commit still under suspicion is unrunnable. Reported honestly (with the
+    suspects) rather than picking one — the same answer `git bisect` gives."""
+
+    def __init__(self, suspects: list[str], boundary: str | None) -> None:
+        shown = ", ".join(s[:8] for s in suspects[:8]) + (f" … (+{len(suspects) - 8} more)" if len(suspects) > 8 else "")
+        super().__init__(
+            f"the regression is in one of {len(suspects)} commit(s) that could not be run ({shown})"
+            + (f", or in {boundary[:8]}, the first commit known to be regressed" if boundary else "")
+            + ". Fix the build/benchmark at those commits, or narrow the range past them."
+        )
+        self.suspects = suspects
+        self.boundary = boundary
+
+
+@dataclass
+class SkippedCommit:
+    """A commit the search had to step over because it couldn't be run."""
+    index: int
+    sha: str
+    reason: str
+    step: int = 0
 
 
 @dataclass
@@ -149,6 +186,7 @@ class BisectionResult:
     candidates_evaluated: int  # excludes the baseline run itself
     probes: list[ProbeRecord] = field(default_factory=list)
     commits: list[CommitInfo] = field(default_factory=list)
+    skipped: list[SkippedCommit] = field(default_factory=list)  # unrunnable commits the search stepped over
 
 
 # ---------------------------------------------------------------------------
@@ -191,11 +229,23 @@ def evaluate_candidate(
     )
 
 
+def _nearest_unskipped(mid: int, lo: int, hi: int, skipped: set[int]) -> int | None:
+    """The index closest to `mid` inside [lo, hi] that hasn't been skipped
+    (mid, mid+1, mid-1, mid+2, ...) — `git bisect skip` picks the same way."""
+    for d in range(0, hi - lo + 1):
+        for cand in ((mid,) if d == 0 else (mid + d, mid - d)):
+            if lo <= cand <= hi and cand not in skipped:
+                return cand
+    return None
+
+
 def bisect(
     commits: list[str],
     *,
     evaluate: Callable[[str], CandidateEvaluation],
     on_step: Callable[[str, int, int, int, CandidateEvaluation | None], None] | None = None,
+    skipped_out: list[tuple[int, CommitUnrunnable]] | None = None,
+    max_skips: int = 12,
 ) -> tuple[str | None, list[tuple[int, CandidateEvaluation]]]:
     """commits: oldest -> newest, assumed monotonic (clean...clean then
     regressed...regressed — the standard bisection precondition). Binary
@@ -206,24 +256,50 @@ def bisect(
     on_step(event, lo, hi, mid, ev): optional progress hook, called with
     event="probe" just before `mid` is evaluated (ev=None) and event="narrowed"
     right after, with the *new* window (lo, hi). Pure observation — it can't
-    influence the search."""
+    influence the search.
+
+    `evaluate` may raise CommitUnrunnable. That commit is then skipped, as in
+    `git bisect skip`: the search probes the nearest runnable neighbour in the
+    window instead (on_step is called with event="skipped"; the commit is
+    appended to `skipped_out` if given). If every commit still under suspicion
+    turns out to be unrunnable, no single guilty commit can be named and
+    BisectionAmbiguous is raised with the suspects — never a guess. With no
+    skips this behaves exactly as the plain binary search always did."""
     n = len(commits)
     lo, hi = 0, n - 1
     result: str | None = None
     visited: list[tuple[int, CandidateEvaluation]] = []
+    skipped: set[int] = set()
     while lo <= hi:
-        mid = (lo + hi) // 2
+        pick = _nearest_unskipped((lo + hi) // 2, lo, hi, skipped)
+        if pick is None:
+            # Everything left in the window is unrunnable: the first regressed
+            # commit is one of them, or the known-regressed one just after.
+            raise BisectionAmbiguous([commits[i] for i in range(lo, hi + 1)], result)
         if on_step:
-            on_step("probe", lo, hi, mid, None)
-        ev = evaluate(commits[mid])
-        visited.append((mid, ev))
+            on_step("probe", lo, hi, pick, None)
+        try:
+            ev = evaluate(commits[pick])
+        except CommitUnrunnable as skip:
+            skipped.add(pick)
+            if skipped_out is not None:
+                skipped_out.append((pick, skip))
+            if len(skipped) > max_skips:
+                raise BisectionError(
+                    f"gave up after {len(skipped)} unrunnable commits — "
+                    "the build or benchmark looks broken across this range"
+                ) from skip
+            if on_step:
+                on_step("skipped", lo, hi, pick, None)
+            continue
+        visited.append((pick, ev))
         if ev.verdict == "regressed":
-            result = commits[mid]
-            hi = mid - 1
+            result = commits[pick]
+            hi = pick - 1
         else:  # "clean" — evaluate_candidate() already resolved "inconclusive"
-            lo = mid + 1
+            lo = pick + 1
         if on_step:
-            on_step("narrowed", lo, hi, mid, ev)
+            on_step("narrowed", lo, hi, pick, ev)
     return result, visited
 
 
@@ -372,6 +448,7 @@ def bisect_repo(
     on_probe: Callable[[ProbeRecord], None] | None = None,
     on_plan: Callable[[list[CommitInfo]], None] | None = None,
     on_window: Callable[[int, int], None] | None = None,
+    on_skip: Callable[[SkippedCommit], None] | None = None,
     confirm_endpoint: bool = True,
 ) -> BisectionResult:
     """The real thing: enumerates commits, benchmarks start_sha as the fixed
@@ -384,6 +461,7 @@ def bisect_repo(
       on_probe    — called with a ProbeRecord as each commit finishes
       on_plan     — called once with the commit list before any benchmarking
       on_window   — called with (lo, hi) global indices as the search narrows
+      on_skip     — called with a SkippedCommit when a midpoint can't be run and is stepped over
 
     confirm_endpoint: like `git bisect`, first check the range's *end* really is
     regressed. If it isn't, the honest answer ("no regression in range") costs
@@ -414,6 +492,7 @@ def bisect_repo(
     step_counter = {"n": 0}
     context: dict[str, Any] = {}
     nano_log: dict[str, list[dict[str, Any]]] = {}
+    skipped: list[SkippedCommit] = []
 
     # Route sandbox callbacks (checkout / deps / each run) into the stream,
     # tagged with the probe currently in flight.
@@ -497,7 +576,25 @@ def bisect_repo(
             step=step, commit=commit_sha, index=idx, role=role,
         )
         t_probe = time.perf_counter()
-        ev = evaluate_candidate(commit_sha, run_more=_run_more, ask_nano=_ask_nano, initial_n_runs=n_runs)
+        try:
+            ev = evaluate_candidate(commit_sha, run_more=_run_more, ask_nano=_ask_nano, initial_n_runs=n_runs)
+        except (BenchmarkRunError, DependencyInstallError) as e:
+            if role != "bisect":
+                raise  # the baseline and the range's end must be measurable — fail loudly, as before
+            # A midpoint that can't be built or run is stepped over (git bisect skip),
+            # not scored and not allowed to kill the search.
+            reason = (getattr(e, "detail", "") or str(e)).strip()[-300:]
+            nano_log.pop(commit_sha, None)
+            rec = SkippedCommit(index=idx, sha=commit_sha, reason=reason, step=step)
+            skipped.append(rec)
+            log.warning("bisector.commit_skipped", job_id=job_id, commit=commit_sha, reason=reason[-200:])
+            rep.end(
+                span, f"skipped — {_short(commit_sha)} can't be run, trying a neighbour",
+                commit=commit_sha, index=idx, role=role, verdict="skipped", skipped=True, reason=reason, step=step,
+            )
+            if on_skip:
+                on_skip(rec)
+            raise CommitUnrunnable(commit_sha, reason) from e
         now = _now_iso()
         timeline.append(TimelineEntry(commit=commit_sha, score=ev.median_score, timestamp=now))
         probe = ProbeRecord(
@@ -524,6 +621,12 @@ def bisect_repo(
         # bisect() works on `search` (see below); +1 converts to global indices
         # ([start] + commits), and the end commit (if confirmed) is index n-1.
         g_lo, g_hi = lo + 1, hi + 1
+        if event == "skipped":
+            rep.emit(
+                "bisect.skip", "bisect",
+                f"{_short(all_shas[mid + 1])} couldn't be run — skipping it and probing a neighbour instead",
+                commit=all_shas[mid + 1], lo=g_lo, hi=g_hi,
+            )
         if event == "narrowed":
             if probes:
                 probes[-1].window = (g_lo, max(g_hi, g_lo - 1))
@@ -540,6 +643,7 @@ def bisect_repo(
 
     # -- endpoint confirmation, then binary search ---------------------------
     regression_commit: str | None
+    _skips: list[tuple[int, CommitUnrunnable]] = []
     search = commits[:-1] if confirm_endpoint else commits
     if confirm_endpoint:
         end_ev = _evaluate(end_sha, role="endpoint")
@@ -552,11 +656,11 @@ def bisect_repo(
         else:
             if on_window:
                 on_window(1, n_total - 1)
-            regression_commit, visited = bisect(search, evaluate=_evaluate, on_step=_on_step)
+            regression_commit, visited = bisect(search, evaluate=_evaluate, on_step=_on_step, skipped_out=_skips)
             if regression_commit is None:
                 regression_commit = end_sha  # every earlier commit was clean
     else:
-        regression_commit, visited = bisect(search, evaluate=_evaluate, on_step=_on_step)
+        regression_commit, visited = bisect(search, evaluate=_evaluate, on_step=_on_step, skipped_out=_skips)
 
     # Sort by position in the overall commit order, not "order visited during
     # the search" — the dashboard timeline should read oldest -> newest.
@@ -570,7 +674,8 @@ def bisect_repo(
         rep.emit(
             "bisect.done", "bisect",
             f"guilty commit found: {_short(regression_commit)} after {n_evaluated} probes "
-            f"(a linear scan needs {len(commits)})",
+            f"(a linear scan needs {len(commits)})"
+            + (f"; {len(skipped)} unrunnable commit(s) skipped" if skipped else ""),
             regression_commit=regression_commit, index=gi, probes=n_evaluated, linear_runs=len(commits),
             subject=infos[gi].subject if gi < len(infos) else "",
         )
@@ -584,5 +689,5 @@ def bisect_repo(
     return BisectionResult(
         regression_commit=regression_commit, timeline=timeline,
         baseline_score=baseline_score, candidates_evaluated=n_evaluated,
-        probes=probes_sorted_by_step, commits=infos,
+        probes=probes_sorted_by_step, commits=infos, skipped=skipped,
     )

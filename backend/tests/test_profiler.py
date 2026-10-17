@@ -194,3 +194,13 @@ def test_profiling_can_be_switched_off(monkeypatch, client):
     job = _wait(client, client.post("/demo").json()["job_id"])
     assert job["status"] == "done" and job["profile"] is None
     assert not any(e["kind"].startswith("profile.") for e in _events(client, job["job_id"]))
+
+
+def test_call_count_explosions_outrank_noisy_time_deltas():
+    def fn(name, calls, cum, project=True):
+        return {"func": name, "file": "", "line": 1, "project": project, "calls": calls, "self_s": cum, "cum_s": cum}
+
+    before = {"total_s": 1, "functions": [fn("app.py:fetch", 3, 0.001), fn("stat", 16, 0.001, False), fn("imp", 5, 0.001, False)]}
+    after = {"total_s": 2, "functions": [fn("app.py:fetch", 30, 0.002), fn("stat", 17, 0.05, False), fn("imp", 5, 0.2, False)]}
+    hot = profiler.diff_profiles(before, after, top=2)
+    assert hot[0]["func"] == "app.py:fetch" and (hot[0]["calls_before"], hot[0]["calls_after"]) == (3, 30)
