@@ -259,3 +259,29 @@ State is persisted (SQLite) as it happens — commits, probes, timeline and fix 
 - **Endpoint confirmation** (as in `git bisect`): the end of the range is benchmarked first. If it isn't regressed the honest answer ("no regression in range") costs 1 probe instead of ~log₂(n); if it is, the search runs over the commits before it, so the chart always has both endpoints.
 - **Cooperative cancellation**: checked between probes, between run rounds and between fix attempts — never mid-benchmark.
 - **The regression threshold's reference is the baseline** (the known-good commit's median) everywhere: Nano's verdict, the "resolved" check, the dashboard, and the PR report quote the same "before".
+
+## 7. Guard-test writer (Ultra) — added in implementation
+
+After a fix is **verified**, Ultra writes a regression test (`backend/guardtest.py`). Optional, best-effort evidence: it never changes `final_result` and can never fail a job. Skipped entirely for an unverified fix.
+
+**Input:** `{test_file_name, diagnosis: {category, explanation, cited_lines}, fix_patch, full_file_contents, benchmark_command, benchmark_source?, profile_hotspots?, attempt_number, previous_attempt: {problem, output} | null}`
+
+**Output (strict JSON):**
+```json
+{ "test_code": "<complete Python unittest module source, or \"\" to decline>", "asserts": "<one sentence: the exact property pinned>" }
+```
+
+**Rules the model is given:** the test must fail by assertion on the regressed code and pass with the fix; pin a deterministic structural property (call/query counts) — never wall-clock time; test behaviour not source text; standard library + repo modules only; chosen thresholds leave margin on both sides. Sources using `perf_counter`/`timeit`/`time.time()` or `inspect.getsource`/`ast.parse` are rejected before running.
+
+**Verification (the model never marks its own test proven):** the file is added as a patch (`test_culprit_regression_guard.py`, repo root) and run with `python -m unittest` in fresh sandboxes — (1) on the regressed commit: must fail with ≥1 *failure* and 0 *errors* (a crash is not a catch); (2) on the regressed commit + the verified fix: must pass. Up to 2 attempts, the failure reason fed back. A test that clears both is `verified`; the last-good-commit run is shown as extra evidence (`passes_on_good`), not a gate. Otherwise `test_code` is withheld and `reason` says why.
+
+**Job state:** `guard_test: {status: "verified"|"not_verified", file_name, command, test_code?, asserts, reason?, fails_without_fix?, passes_with_fix?, passes_on_good?, attempts[]}`. Download: `GET /jobs/{id}/guard-test.py` (404 unless verified). Events: `guardtest.start`/`guardtest.end` (span), `guardtest.attempt`.
+
+## 8. Fixer — best-of-N candidates (added in implementation)
+
+With `FIX_CANDIDATES` > 1 the §3 loop becomes rounds (max 3): each round the Fixer is called once per candidate, **concurrently**, with the §3 input plus one optional field — `approach` (a one-sentence strategy, different per candidate: minimal / revert-style / batching-or-caching / root-cause / easiest-to-review) — and `FIXER_SYSTEM_PROMPT` followed by a short addendum saying several engineers are working in parallel and each should follow its own approach. The output schema and the 0.1–0.3 temperature are unchanged (diversity comes from the approaches, not from heat). `attempt_number` is the round number; `previous_attempt_result` is the closest miss of the previous round (a patch that was fast but failed the tests beats a slower miss, which beats a crash). With one candidate nothing above applies: the call is byte-for-byte §3.
+
+**Selection is never the model's call.** Every candidate is applied and benchmarked (and tested, if a test command was given) in a fresh sandbox. Only candidates whose own run verified are eligible; the winner is the lowest measured median (ties → the smaller patch). `resolved` is still only what the sandbox said. Candidates are verified side by side only where each gets an isolated VM (Token Factory); locally they are verified one at a time so their timings stay honest.
+
+**Job state:** `fix_attempts[]` gain `round`, `candidate`, `selected` (null / null / false for a plain sequential run). Events: `fixround.start`/`fixround.end` (span), `fix.selected`, `fix.candidate_failed`; each candidate still has its own `fix.start`/`fix.end` span and `patch.built`.
+

@@ -72,7 +72,8 @@ def test_demo_end_to_end_is_resolved_with_a_real_verified_fix(offline_client):
 
     m = job["metrics"]
     assert m["sandbox"]["runs"] >= 35 and m["sandbox"]["patched_runs"] == 5
-    assert m["models"]["nano"]["calls"] >= 4 and m["models"]["ultra"]["calls"] == 2
+    # Ultra: diagnose + fix + the regression-guard test writer
+    assert m["models"]["nano"]["calls"] >= 4 and m["models"]["ultra"]["calls"] == 3
     assert all(mm["offline"] for mm in m["models"].values())  # labelled as stand-ins everywhere
 
 

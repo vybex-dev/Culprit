@@ -39,6 +39,8 @@ _CACHE_HINTS = ("cache", "memo", "lru_cache", "@cached")
 def offline_call(model: str, payload: dict[str, Any]) -> dict[str, Any]:
     if model == "nano":
         return _nano_verdict(payload)
+    if "test_file_name" in payload:  # the guard-test writer (before the fixer: it also carries file contents)
+        return _guard_test(payload)
     if "full_file_contents" in payload:
         return _fixer(payload)
     if "diff" in payload:
@@ -207,4 +209,89 @@ def _fixer(payload: dict[str, Any]) -> dict[str, Any]:
             "[offline stand-in fixer — not Nemotron; the result is still verified by a real sandbox re-run]"
         ),
         "confidence_will_resolve": "medium",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Ultra / guard-test writer — turns the MEASURED profile into a call-count
+# assertion. No hotspot whose call count exploded (or a benchmark that isn't a
+# plain `python script.py`) means it honestly declines. The test it writes is
+# still PROVEN by real sandbox runs (red on the regression, green with the fix)
+# before anything is offered, exactly like the live model's.
+# ---------------------------------------------------------------------------
+
+_TEST_TEMPLATE = '''"""Regression guard written by Culprit's offline stand-in (not Nemotron).
+
+Pins the ROOT CAUSE of a performance regression as a deterministic count, not a timing:
+`{name}` ({file}) went from {before} to {after} calls on this benchmark's code path.
+The limit sits between the two, so the regression fails it and the fix passes it.
+"""
+import contextlib
+import io
+import os
+import runpy
+import sys
+import unittest
+
+BENCHMARK = {bench!r}
+TARGET_FILE = {file!r}
+TARGET_NAME = {name!r}
+MAX_CALLS = {limit}
+
+
+class RegressionGuard(unittest.TestCase):
+    def test_{ident}_is_not_called_per_item(self):
+        root = os.getcwd()
+        for p in (root, os.path.dirname(os.path.abspath(BENCHMARK))):
+            if p not in sys.path:
+                sys.path.insert(0, p)
+        calls = 0
+
+        def profiler(frame, event, arg):
+            nonlocal calls
+            if event == "call" and frame.f_code.co_name == TARGET_NAME and frame.f_code.co_filename.endswith(TARGET_FILE):
+                calls += 1
+
+        sys.setprofile(profiler)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                runpy.run_path(BENCHMARK, run_name="__main__")
+        finally:
+            sys.setprofile(None)
+        self.assertLessEqual(
+            calls, MAX_CALLS,
+            f"{{TARGET_NAME}} was called {{calls}} times on the benchmark path; the limit is {{MAX_CALLS}}",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+'''
+
+
+def _guard_test(payload: dict[str, Any]) -> dict[str, Any]:
+    bench = next((t for t in (payload.get("benchmark_command") or "").split() if t.endswith(".py")), None)
+    exploded = [
+        h for h in (payload.get("profile_hotspots") or [])
+        if h.get("project") and h.get("calls_after", 0) >= 2 * max(h.get("calls_before", 0), 1)
+        and h.get("calls_after", 0) - h.get("calls_before", 0) >= 3 and h.get("file")
+        and not str(h.get("func", "")).rsplit(":", 1)[-1].startswith("<")  # not a genexpr/lambda: pin a real function
+    ]
+    if not bench or not exploded:
+        return {
+            "test_code": "",
+            "asserts": ("The offline stand-in can only write a call-count guard from a measured profile hotspot whose "
+                        "call count exploded, and none was available for this benchmark. [offline stand-in — not Nemotron]"),
+        }
+    h = max(exploded, key=lambda x: x["calls_after"] - x["calls_before"])
+    name = str(h["func"]).rsplit(":", 1)[-1]
+    before, after = int(h["calls_before"]), int(h["calls_after"])
+    limit = (before + after) // 2
+    ident = re.sub(r"\W+", "_", name).strip("_") or "target"
+    return {
+        "test_code": _TEST_TEMPLATE.format(
+            name=name, file=h["file"], before=before, after=after, bench=bench, limit=limit, ident=ident,
+        ),
+        "asserts": f"`{name}` ({h['file']}) is called at most {limit} times on the benchmark path "
+                   f"(it was {before} before the regression, {after} with it). [offline stand-in — not Nemotron]",
     }

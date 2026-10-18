@@ -100,12 +100,14 @@ from dotenv import load_dotenv
 # win over .env, so a one-off `export` keeps working as an override.
 load_dotenv(Path(__file__).with_name(".env"))
 
+import guardtest
 import profiler
 from bisector import ProbeRecord, bisect_repo
 from demo_repo import BENCHMARK_COMMAND as DEMO_BENCHMARK_COMMAND, build_demo_repo
 from diagnoser import DiagnosisResult, diagnose
 from events import JobCancelled, Reporter, now_iso, sandbox_listener, summarize
 from fixer import FixLoopResult, FixProposal, VerifyOutcome, run_fix_loop_live
+from patcher import PatchBuildError, new_file_patch
 from preflight import run_preflight
 from report import render_report
 from sandbox_client import BenchmarkRunError, SandboxError, get_sandbox
@@ -116,6 +118,8 @@ from schema import (  # noqa: F401 — re-exported: `from api import InMemoryJob
     EventStore,
     FixAttemptModel,
     FixModel,
+    GuardAttemptModel,
+    GuardTestModel,
     InMemoryEventStore,
     InMemoryJobStore,
     JobNotFoundError,
@@ -142,6 +146,46 @@ _MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", "2"))
 # Profile the last-good and guilty commits so the diagnosis rests on measured
 # call counts, not only on reading the diff. Best-effort; set CULPRIT_PROFILE=0 to skip.
 _PROFILE_ENABLED = os.environ.get("CULPRIT_PROFILE", "1") != "0"
+# After a verified fix, write + PROVE a regression-guard test (guardtest.py).
+# Best-effort extra evidence; CULPRIT_GUARD_TEST=0 turns it off.
+_GUARD_TEST_ENABLED = os.environ.get("CULPRIT_GUARD_TEST", "1") != "0"
+# How many commits the bisection probes at once. "auto" (default) = 3 on Token
+# Factory, where every probe is its own isolated VM so concurrent benchmarks
+# can't disturb each other, and 1 on the local sandbox, where they would share a
+# CPU and corrupt each other's timings. A number forces it (with a warning locally).
+_BISECT_PARALLELISM = os.environ.get("BISECT_PARALLELISM", "auto").strip().lower()
+_AUTO_PARALLELISM_TOKEN_FACTORY = 3
+_MAX_PARALLELISM = 6
+
+
+def _resolve_parallelism(use_token_factory: bool) -> int:
+    if _BISECT_PARALLELISM in ("", "auto"):
+        return _AUTO_PARALLELISM_TOKEN_FACTORY if use_token_factory else 1
+    try:
+        return min(max(int(_BISECT_PARALLELISM), 1), _MAX_PARALLELISM)
+    except ValueError:
+        return 1
+
+# How many DIFFERENT fixes the Fixer proposes per round (best-of-N: the fastest one
+# that really verifies is kept). "auto" = 3 on Token Factory, where each candidate is
+# benchmarked in its own isolated VM and they can run side by side; 1 locally. A
+# number forces it (max 5). Proposals are model calls and always run concurrently;
+# VERIFICATION runs side by side only on Token Factory — never on the local sandbox,
+# where concurrent benchmarks would share a CPU and corrupt each other's timings.
+_FIX_CANDIDATES = os.environ.get("FIX_CANDIDATES", "auto").strip().lower()
+_AUTO_FIX_CANDIDATES_TOKEN_FACTORY = 3
+_MAX_FIX_CANDIDATES = 5
+
+
+def _resolve_fix_candidates(use_token_factory: bool) -> int:
+    if _FIX_CANDIDATES in ("", "auto"):
+        return _AUTO_FIX_CANDIDATES_TOKEN_FACTORY if use_token_factory else 1
+    try:
+        return min(max(int(_FIX_CANDIDATES), 1), _MAX_FIX_CANDIDATES)
+    except ValueError:
+        return 1
+
+
 _MAX_DIFF_CHARS = int(os.environ.get("CULPRIT_MAX_DIFF_CHARS", "150000"))
 _MAX_CONTEXT_CHARS = int(os.environ.get("CULPRIT_MAX_CONTEXT_CHARS", "300000"))
 _MAX_FILE_CHARS = 120_000
@@ -418,6 +462,109 @@ def _concat_file_contents_at_commit(repo_path: Path, commit_sha: str, paths: lis
     return "\n\n".join(parts)
 
 
+def _guard_test_stage(
+    *,
+    job_id: str,
+    repo_path: Path,
+    sandbox: Any,
+    reporter: Reporter,
+    diagnosis: dict,
+    fix_patch: str,
+    full_file_contents: str,
+    regression_commit: str,
+    benchmark_command: str,
+    hotspots: list[dict] | None,
+    on_update: Callable[[GuardTestModel], None],
+    verify_ctx: dict[str, Any],
+) -> GuardTestModel | None:
+    """Write a regression-guard test for a VERIFIED fix and prove it in the
+    sandbox (red on the regressed commit, green with the fix). Best-effort extra
+    evidence: any failure here is reported and swallowed — it can never fail the
+    job or change its result. Returns None only if the stage could not even start."""
+    bench_src = guardtest.benchmark_source(
+        benchmark_command, lambda path: _run_git(["show", f"{regression_commit}:{path}"], cwd=repo_path),
+    )
+    try:
+        good_sha: str | None = _run_git(["rev-parse", f"{regression_commit}^"], cwd=repo_path).strip() or None
+    except ValueError:
+        good_sha = None  # the guilty commit has no parent (it's the root): nothing to compare against
+
+    def _model(res: guardtest.GuardResult) -> GuardTestModel:
+        return GuardTestModel(
+            status="verified" if res.verified else "not_verified",
+            file_name=guardtest.GUARD_TEST_FILE, command=guardtest.GUARD_TEST_COMMAND,
+            test_code=res.test_code if res.verified else None,
+            asserts=res.asserts, reason=None if res.verified else (res.reason or "no usable test was produced"),
+            fails_without_fix=res.fails_without_fix, passes_with_fix=res.passes_with_fix,
+            passes_on_good=res.passes_on_good,
+            attempts=[GuardAttemptModel(attempt=a.attempt, status=a.status, note=a.note[:600]) for a in res.attempts],
+        )
+
+    span = reporter.start(
+        "guardtest", "fix",
+        "regression guard · Ultra writes a test, the sandbox must prove it (red on the regression, green with the fix)",
+        file=guardtest.GUARD_TEST_FILE, command=guardtest.GUARD_TEST_COMMAND,
+    )
+    verify_ctx["phase"] = "guardtest"
+    try:
+        def _propose(n: int, previous: dict | None) -> guardtest.GuardProposal:
+            reporter.check_cancelled()
+            verify_ctx["attempt"] = n
+            return guardtest.propose_guard_test(
+                job_id=job_id, diagnosis=diagnosis, fix_patch=fix_patch, full_file_contents=full_file_contents,
+                benchmark_command=benchmark_command, bench_source=bench_src, hotspots=hotspots,
+                attempt_number=n, previous=previous, reporter=reporter,
+            )
+
+        def _patch_for(code: str, *, with_fix: bool) -> str:
+            test_patch = new_file_patch(guardtest.GUARD_TEST_FILE, code)
+            return (fix_patch.rstrip("\n") + "\n" + test_patch) if with_fix else test_patch
+
+        def _run(commit: str, with_fix: bool):
+            return lambda code: sandbox.run_tests(
+                commit, guardtest.GUARD_TEST_COMMAND, patch=_patch_for(code, with_fix=with_fix),
+            )
+
+        def _on_attempt(a: guardtest.GuardAttempt) -> None:
+            msg = {
+                "verified": f"attempt {a.attempt}: fails on the regressed code, passes with the fix → verified ✔",
+                "declined": f"attempt {a.attempt}: the model declined to write a test — {a.note}",
+            }.get(a.status, f"attempt {a.attempt}: rejected ({a.status}) — {a.note}")
+            reporter.emit("guardtest.attempt", "fix", msg, attempt=a.attempt, status=a.status, note=a.note[:600])
+
+        res = guardtest.run_guard_loop(
+            propose=_propose,
+            run_without_fix=_run(regression_commit, False),
+            run_with_fix=_run(regression_commit, True),
+            run_on_good=_run(good_sha, False) if good_sha else None,
+            on_attempt=_on_attempt,
+        )
+        model = _model(res)
+        on_update(model)
+        if res.verified:
+            good = {True: " · also green on the last good commit", False: " · NOT green on the last good commit — it may be tied to the fix's exact shape"}.get(res.passes_on_good, "")
+            reporter.end(span, "guard test verified — red on the regressed commit, green with the fix" + good,
+                         verified=True, passes_on_good=res.passes_on_good, asserts=res.asserts)
+        else:
+            reporter.end(span, f"no guard test could be proven — nothing was shipped ({res.reason})",
+                         verified=False, reason=res.reason)
+        return model
+    except JobCancelled:
+        raise
+    except (guardtest.GuardTestError, PatchBuildError, SandboxError, ValueError) as e:
+        reason = f"{type(e).__name__}: {str(e)[-300:]}"
+    except Exception as e:  # noqa: BLE001 — extra evidence must never take the job down
+        log.warning("api.guard_test_failed", job_id=job_id, error=f"{type(e).__name__}: {e}")
+        reason = f"{type(e).__name__}: {str(e)[-300:]}"
+    log.warning("api.guard_test_unavailable", job_id=job_id, reason=reason)
+    reporter.end(span, f"could not produce a guard test ({reason}) — the fix itself is unaffected",
+                 verified=False, reason=reason)
+    model = GuardTestModel(status="not_verified", file_name=guardtest.GUARD_TEST_FILE,
+                           command=guardtest.GUARD_TEST_COMMAND, reason=reason)
+    on_update(model)
+    return model
+
+
 # ---------------------------------------------------------------------------
 # Runtime: shared state for running jobs
 # ---------------------------------------------------------------------------
@@ -540,12 +687,21 @@ def _run_analysis(
                 SkippedModel(index=sk.index, sha=sk.sha, reason=sk.reason, step=sk.step),
             ]))
 
+        parallelism = _resolve_parallelism(use_token_factory)
+        if parallelism > 1 and not use_token_factory:
+            reporter.emit(
+                "bisect.warning", "bisect",
+                f"probing {parallelism} commits at once on the LOCAL sandbox — they share this machine's CPU, so their "
+                "timings can disturb each other. Use Token Factory sandboxes (one isolated VM per probe) for trustworthy "
+                "parallel numbers.",
+                parallelism=parallelism,
+            )
         result = bisect_repo(
             job_id=job_id, repo_path=str(repo_path), start_sha=start_sha, end_sha=end_sha,
             benchmark_command=benchmark_command, sandbox=sandbox,
             regression_threshold_pct=regression_threshold_pct, n_runs=n_runs,
             reporter=reporter, on_probe=_on_probe, on_plan=_on_plan, on_window=_on_window,
-            on_skip=_on_skip,
+            on_skip=_on_skip, parallelism=parallelism,
         )
 
         def _bisect_done(j: JobState) -> None:
@@ -605,7 +761,12 @@ def _run_analysis(
 
         # Re-point the sandbox's live narration at the verify phase.
         verify_ctx: dict[str, Any] = {"phase": "verify", "attempt": 0}
-        sandbox.listener = sandbox_listener(reporter, lambda: dict(verify_ctx))
+        # Candidates can be verified concurrently, so each verify call carries its own
+        # (thread-local) context; everything else reads the shared dict as before.
+        _verify_tl = threading.local()
+        sandbox.listener = sandbox_listener(
+            reporter, lambda: dict(getattr(_verify_tl, "ctx", None) or verify_ctx),
+        )
 
         regressed_score = next(
             (t.score for t in result.timeline if t.commit == result.regression_commit), result.baseline_score,
@@ -641,7 +802,15 @@ def _run_analysis(
             verify_ctx["phase"] = "verify"
 
         def _verify(proposal: FixProposal) -> VerifyOutcome:
-            verify_ctx["attempt"] += 1
+            n = proposal.attempt or (verify_ctx["attempt"] + 1)
+            verify_ctx["attempt"] = max(verify_ctx["attempt"], n)
+            _verify_tl.ctx = {"phase": "verify", "attempt": n}
+            try:
+                return _verify_one(proposal, n)
+            finally:
+                _verify_tl.ctx = None
+
+        def _verify_one(proposal: FixProposal, n: int) -> VerifyOutcome:
             try:
                 bench_result = sandbox.apply_patch_and_benchmark(
                     result.regression_commit, proposal.patch, benchmark_command, n_runs=n_runs,
@@ -654,7 +823,7 @@ def _run_analysis(
                 log.warning("fixer.patched_run_failed", job_id=job_id, error=str(e)[-300:])
                 reporter.emit("verify.crashed", "sandbox",
                               "the patched code did not run cleanly — counting it as a failed attempt and feeding the error back",
-                              attempt=verify_ctx["attempt"], error=e.detail or str(e)[-600:])
+                              attempt=n, error=e.detail or str(e)[-600:])
                 return VerifyOutcome(score_after=regressed_score, resolved=False,
                                      note=f"the patched benchmark failed to run: {e.detail or str(e)[-600:]}")
             except SandboxError as e:
@@ -664,7 +833,7 @@ def _run_analysis(
                 # attempt (the loop retries), not a dead job.
                 log.warning("fixer.patch_did_not_apply", job_id=job_id, error=str(e)[-300:])
                 reporter.emit("patch.rejected", "sandbox", "patch did not apply cleanly — counting it as a failed attempt",
-                              attempt=verify_ctx["attempt"], error=str(e)[-400:])
+                              attempt=n, error=str(e)[-400:])
                 return VerifyOutcome(score_after=regressed_score, resolved=False,
                                      note=f"the patch did not apply cleanly: {str(e)[-600:]}")
             score_after = statistics.median(bench_result.raw_scores)
@@ -677,7 +846,7 @@ def _run_analysis(
                 "verify.result", "sandbox",
                 f"patched median {score_after:.3f} ms is {pct_change:+.1f}% vs baseline — "
                 + ("within threshold ✔" if perf_ok else f"still above the {regression_threshold_pct:g}% threshold"),
-                attempt=verify_ctx["attempt"], median=score_after, raw_scores=bench_result.raw_scores,
+                attempt=n, median=score_after, raw_scores=bench_result.raw_scores,
                 pct_change=pct_change, threshold_pct=regression_threshold_pct,
                 # With the guard on, "resolved" is only final once the tests have run too.
                 resolved=perf_ok and not guard_on,
@@ -696,7 +865,7 @@ def _run_analysis(
                 log.warning("fixer.tests_run_failed", job_id=job_id, error=str(e)[-300:])
                 reporter.emit("tests.result", "sandbox",
                               "the test suite could not be run on the patched code — not verifying",
-                              attempt=verify_ctx["attempt"], passed=False, error=str(e)[-400:])
+                              attempt=n, passed=False, error=str(e)[-400:])
                 return VerifyOutcome(
                     score_after=score_after, resolved=False, perf_ok=True, tests_passed=False,
                     tests_note=f"the test suite could not be run on your patch: {str(e)[-400:]}",
@@ -705,7 +874,7 @@ def _run_analysis(
                 "tests.result", "sandbox",
                 "test suite passed on the patched code ✔" if suite.passed
                 else "test suite FAILED on the patched code — the speed-up broke behaviour",
-                attempt=verify_ctx["attempt"], passed=suite.passed, exit_code=suite.exit_code,
+                attempt=n, passed=suite.passed, exit_code=suite.exit_code,
                 timed_out=suite.timed_out, output=suite.output_tail, dur_s=suite.duration_s,
             )
             return VerifyOutcome(
@@ -717,13 +886,21 @@ def _run_analysis(
                 ),
             )
 
+        def _attempt_model(a, selected_attempt: int | None = None) -> FixAttemptModel:
+            return FixAttemptModel(
+                attempt=a.attempt, patch=a.patch, rationale=a.rationale,
+                score_after=a.score_after, resolved=a.resolved, error=a.error or None,
+                tests_passed=a.tests_passed, test_output=a.test_output or None,
+                round=a.round or None, candidate=a.candidate or None,
+                selected=bool(a.selected) or (selected_attempt is not None and a.attempt == selected_attempt),
+            )
+
         def _on_attempt(a) -> None:
             def m(j: JobState) -> None:
-                j.fix_attempts = [x for x in j.fix_attempts if x.attempt != a.attempt] + [
-                    FixAttemptModel(attempt=a.attempt, patch=a.patch, rationale=a.rationale,
-                                    score_after=a.score_after, resolved=a.resolved, error=a.error or None,
-                                    tests_passed=a.tests_passed, test_output=a.test_output or None)
-                ]
+                j.fix_attempts = sorted(
+                    [x for x in j.fix_attempts if x.attempt != a.attempt] + [_attempt_model(a)],
+                    key=lambda x: x.attempt,
+                )
                 # Show the running fix summary live; `verified` only ever
                 # mirrors a real sandbox verdict (rule 1).
                 j.fix = FixModel(patch_diff=a.patch, verified=a.resolved,
@@ -732,6 +909,7 @@ def _run_analysis(
 
             rt.update(job_id, m)
 
+        fix_candidates = _resolve_fix_candidates(use_token_factory)
         fix_loop_result: FixLoopResult = run_fix_loop_live(
             job_id=job_id,
             diagnosis=dataclasses.asdict(diagnosis_result),  # flag #7
@@ -740,15 +918,26 @@ def _run_analysis(
             before_score=result.baseline_score,
             on_attempt=_on_attempt,
             reporter=reporter,
+            candidates=fix_candidates,
+            verify_parallelism=fix_candidates if use_token_factory else 1,
         )
 
+        # ---- regression guard test (optional, best-effort) ---------------
+        # Only for a fix that really verified; never changes the job's result.
+        if _GUARD_TEST_ENABLED and fix_loop_result.resolved and fix_loop_result.final_patch:
+            reporter.check_cancelled()
+            _guard_test_stage(
+                job_id=job_id, repo_path=repo_path, sandbox=sandbox, reporter=reporter,
+                diagnosis=dataclasses.asdict(diagnosis_result), fix_patch=fix_loop_result.final_patch,
+                full_file_contents=full_file_contents, regression_commit=result.regression_commit,
+                benchmark_command=benchmark_command,
+                hotspots=(profile_evidence or {}).get("hotspots"),
+                on_update=lambda m: rt.update(job_id, lambda j: setattr(j, "guard_test", m)),
+                verify_ctx=verify_ctx,
+            )
+
         def _finish(j: JobState) -> None:
-            j.fix_attempts = [
-                FixAttemptModel(attempt=a.attempt, patch=a.patch, rationale=a.rationale,
-                                score_after=a.score_after, resolved=a.resolved, error=a.error or None,
-                                tests_passed=a.tests_passed, test_output=a.test_output or None)
-                for a in fix_loop_result.attempts
-            ]
+            j.fix_attempts = [_attempt_model(a, fix_loop_result.selected_attempt) for a in fix_loop_result.attempts]
             if fix_loop_result.final_patch is not None:
                 j.fix = FixModel(
                     patch_diff=fix_loop_result.final_patch,
@@ -872,6 +1061,8 @@ def create_app(
             "n_runs": _DEFAULT_N_RUNS,
             "auto_range_commits": _AUTO_RANGE_COMMITS,
             "max_concurrent_jobs": _MAX_CONCURRENT_JOBS,
+            "bisect_parallelism": _resolve_parallelism(_USE_TOKEN_FACTORY and not offline),
+            "fix_candidates": _resolve_fix_candidates(_USE_TOKEN_FACTORY and not offline),
             "demo_benchmark_command": DEMO_BENCHMARK_COMMAND,
         }
 
@@ -966,6 +1157,18 @@ def create_app(
             job.fix.patch_diff if job.fix.patch_diff.endswith("\n") else job.fix.patch_diff + "\n",
             media_type="text/x-diff; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="culprit-{job_id}.patch"'},
+        )
+
+    @app.get("/jobs/{job_id}/guard-test.py", response_class=PlainTextResponse)
+    def guard_test_file(job_id: str) -> PlainTextResponse:
+        job = _load(job_id)
+        g = job.guard_test
+        if g is None or g.status != "verified" or not g.test_code:
+            raise HTTPException(404, "this job has no verified guard test")
+        return PlainTextResponse(
+            g.test_code if g.test_code.endswith("\n") else g.test_code + "\n",
+            media_type="text/x-python; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{g.file_name}"'},
         )
 
     return app

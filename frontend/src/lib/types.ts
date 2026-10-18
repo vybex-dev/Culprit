@@ -82,6 +82,11 @@ export interface FixAttempt {
    * patched code; null/absent when it wasn't run. */
   tests_passed?: boolean | null;
   test_output?: string | null;
+  /** Best-of-N: set only when several candidate fixes were proposed per round. */
+  round?: number | null;
+  candidate?: number | null;
+  /** The verified candidate that was kept. */
+  selected?: boolean;
 }
 
 /** One function whose cost grew between the last good commit and the guilty one. */
@@ -126,6 +131,29 @@ export interface Fix {
   /** true only when `verified` AND the test suite was green on the patched
    * code; null/absent when the job had no usable test command. */
   tests_verified?: boolean | null;
+}
+
+export interface GuardAttempt {
+  attempt: number;
+  status: string;
+  note: string;
+}
+
+/** A regression test for the fix. `test_code` is present only when the sandbox
+ * PROVED it: red on the regressed commit (an assertion failure), green with the
+ * fix applied. Never shipped otherwise. */
+export interface GuardTest {
+  status: "verified" | "not_verified";
+  file_name: string;
+  command: string;
+  test_code?: string | null;
+  asserts: string;
+  reason?: string | null;
+  fails_without_fix?: boolean | null;
+  passes_with_fix?: boolean | null;
+  /** Extra evidence, not a gate: also green on the last good commit? */
+  passes_on_good?: boolean | null;
+  attempts: GuardAttempt[];
 }
 
 export interface JobState {
@@ -178,6 +206,7 @@ export interface JobState {
    * gates fixes), "baseline_failing" (already red — can't judge), or
    * "unavailable" (couldn't be run). */
   tests_guard?: "active" | "baseline_failing" | "unavailable" | null;
+  guard_test?: GuardTest | null;
 }
 
 export interface Commit {
@@ -281,6 +310,8 @@ export interface AppConfig {
   n_runs: number;
   auto_range_commits: number;
   max_concurrent_jobs: number;
+  /** How many commits the bisection probes at once (1 = sequential). */
+  bisect_parallelism?: number;
   demo_benchmark_command: string;
 }
 

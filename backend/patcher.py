@@ -91,3 +91,26 @@ def edits_to_patch(full_file_contents: str, edits: list[dict]) -> str:
     if not patch.strip():
         raise PatchBuildError("the edits made no change to any file")
     return patch
+
+
+def new_file_patch(path: str, content: str) -> str:
+    """A `git apply`-compatible unified diff that CREATES `path` with `content`.
+    Built by hand (not difflib) so odd characters in the content — form feeds,
+    lone CRs — can't be mistaken for line breaks and corrupt the hunk."""
+    if not path or path.startswith("/") or ".." in path.split("/"):
+        raise PatchBuildError(f"refusing to create {path!r}: the path must be relative and stay inside the repo")
+    text = content.replace("\r\n", "\n")
+    if not text.strip():
+        raise PatchBuildError("a new file must have content")
+    if not text.endswith("\n"):
+        text += "\n"
+    lines = text.split("\n")[:-1]
+    body = "".join(f"+{line}\n" for line in lines)
+    return (
+        f"diff --git a/{path} b/{path}\n"
+        "new file mode 100644\n"
+        "--- /dev/null\n"
+        f"+++ b/{path}\n"
+        f"@@ -0,0 +1,{len(lines)} @@\n"
+        f"{body}"
+    )

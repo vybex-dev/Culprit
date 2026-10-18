@@ -134,7 +134,7 @@ export function groupOf(source: string): Group {
  * step (checkouts, runs, model calls, citation checks…) indented beneath. */
 function depthOf(kind: string): 0 | 1 {
   if (kind === "sandbox.ready") return 0;
-  return /^(sandbox|model|nano|citation|tavily|patch|verify)\./.test(kind) ? 1 : 0;
+  return /^(sandbox|model|nano|citation|tavily|patch|verify)\./.test(kind) || kind === "guardtest.attempt" ? 1 : 0;
 }
 
 function base(ev: LogEvent, over: Partial<TermRow>): TermRow {
@@ -267,6 +267,34 @@ function applyEnd(row: TermRow, ev: LogEvent): TermRow {
       out.meta = dur !== null ? fmtDur(dur) : undefined;
       break;
     }
+    case "fixround.end": {
+      const verified = num(d.verified) ?? 0;
+      const of = num(d.of);
+      const ok = verified > 0;
+      out.glyph = ok ? "ok" : "warn";
+      out.tone = ok ? "good" : "warn";
+      out.chips =
+        of !== null
+          ? [{ label: ok ? `${verified}/${of} verified` : `0/${of} verified`, tone: ok ? "good" : "warn" }]
+          : undefined;
+      out.meta = dur !== null ? fmtDur(dur) : undefined;
+      break;
+    }
+    case "guardtest.end": {
+      const verified = d.verified === true;
+      out.glyph = verified ? "ok" : "warn";
+      out.tone = verified ? "good" : "warn";
+      out.chips = [
+        verified
+          ? { label: "proven red → green", tone: "good", title: "Failed on the regressed commit, passed with the fix — in real sandbox runs." }
+          : { label: "not shipped", tone: "warn", title: str(d.reason) || "No test could be proven, so none is offered." },
+      ];
+      if (verified && d.passes_on_good === false) {
+        out.chips.push({ label: "not green on last good commit", tone: "warn", title: "May be tied to the fix's exact shape." });
+      }
+      out.meta = dur !== null ? fmtDur(dur) : undefined;
+      break;
+    }
     case "tests.end": {
       const guard = str(d.guard);
       const active = guard === "active";
@@ -355,8 +383,19 @@ function describePoint(ev: LogEvent): TermRow {
         chips: [
           { label: `≤ ${d.max_probes} probes`, tone: "iris" },
           { label: `vs ${d.linear_runs} linear`, tone: "muted" },
+          ...((num(d.parallelism) ?? 1) > 1
+            ? [{ label: `${num(d.parallelism)} at a time · ~${num(d.rounds) ?? "?"} rounds`, tone: "iris" as const }]
+            : []),
         ],
       });
+    case "bisect.round": {
+      const n = Array.isArray(d.commits) ? d.commits.length : num(d.parallelism);
+      return base(ev, {
+        glyph: "arrow",
+        tone: "iris",
+        chips: n ? [{ label: `${n} in parallel`, tone: "iris" }] : undefined,
+      });
+    }
     case "bisect.window": {
       const lo = num(d.lo);
       const hi = num(d.hi);
@@ -369,8 +408,21 @@ function describePoint(ev: LogEvent): TermRow {
     }
     case "bisect.skip":
       return base(ev, { glyph: "warn", tone: "warn", chips: [{ label: "skipped", tone: "warn" }] });
-    case "bisect.done":
-      return base(ev, { glyph: d.regression_commit ? "warn" : "ok", tone: d.regression_commit ? "accent" : "good", emphasis: true });
+    case "bisect.done": {
+      const par = num(d.parallelism) ?? 1;
+      const probeT = num(d.probe_time_s);
+      const wallT = num(d.wall_s);
+      const chips: Chip[] =
+        par > 1 && probeT !== null && wallT !== null && wallT > 0 && probeT > wallT * 1.05
+          ? [{ label: `${(probeT / wallT).toFixed(1)}× faster than one at a time`, tone: "good" }]
+          : [];
+      return base(ev, {
+        glyph: d.regression_commit ? "warn" : "ok",
+        tone: d.regression_commit ? "accent" : "good",
+        emphasis: true,
+        chips: chips.length ? chips : undefined,
+      });
+    }
     case "sandbox.checkout":
       return base(ev, { meta: num(d.dur_s) !== null ? fmtDur(num(d.dur_s)) : undefined });
     case "sandbox.deps":
@@ -438,6 +490,25 @@ function describePoint(ev: LogEvent): TermRow {
       });
     case "sandbox.tests":
       return base(ev, { glyph: d.passed ? "ok" : "fail", tone: d.passed ? "good" : "bad" });
+    case "fix.selected":
+      return base(ev, {
+        glyph: "ok",
+        tone: "good",
+        emphasis: true,
+        chips: [{ label: `kept candidate ${num(d.candidate) ?? "?"}`, tone: "good", title: "The best-measured candidate among those that verified." }],
+      });
+    case "fix.candidate_failed":
+      return base(ev, { glyph: "warn", tone: "warn", detail: d.error ? { type: "text", text: str(d.error) } : undefined });
+    case "guardtest.attempt": {
+      const status = str(d.status);
+      const ok = status === "verified";
+      return base(ev, {
+        glyph: ok ? "ok" : "warn",
+        tone: ok ? "good" : "warn",
+        chips: [{ label: status.replace(/_/g, " "), tone: ok ? "good" : "warn" }],
+        detail: !ok && d.note ? { type: "text", text: str(d.note) } : undefined,
+      });
+    }
     case "tests.result": {
       const passed = d.passed === true;
       return base(ev, {

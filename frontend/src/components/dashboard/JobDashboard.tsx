@@ -20,6 +20,7 @@ import { RegressionCallout } from "./RegressionCallout";
 import { DrillDownPanel } from "./DrillDownPanel";
 import { DiagnosisSection, DiagnosisSectionLoading, type RegressionImpact } from "./DiagnosisSection";
 import { FixSection } from "./FixSection";
+import { GuardTestCard } from "./GuardTestCard";
 import { ProfileEvidence } from "./ProfileEvidence";
 import { FinalResultBanner } from "./FinalResultBanner";
 import { ErrorBanner } from "./ErrorState";
@@ -182,6 +183,7 @@ export function JobDashboard({
           {job.diagnosis ? <DiagnosisSection diagnosis={job.diagnosis} impact={regressionImpact(job)} /> : <DiagnosisSectionLoading />}
           {job.diagnosis && job.profile && job.profile.hotspots.length > 0 && <ProfileEvidence profile={job.profile} />}
           {job.diagnosis && <FixSection fix={job.fix} attempts={job.fix_attempts} guard={job.tests_guard} />}
+          {job.guard_test && <GuardTestCard jobId={job.job_id} guardTest={job.guard_test} />}
         </div>
       </DrillDownPanel>
     </div>

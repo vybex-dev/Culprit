@@ -66,6 +66,11 @@ class DiagnosisModel(BaseModel):
 
 class FixAttemptModel(BaseModel):
     attempt: int
+    # Best-of-N (additive): set only when the job proposed several candidate fixes
+    # per round. `selected` marks the verified candidate that was kept.
+    round: int | None = None
+    candidate: int | None = None
+    selected: bool = False
     patch: str
     rationale: str
     score_after: float
@@ -112,6 +117,30 @@ class ProfileModel(BaseModel):
     before_total_s: float
     after_total_s: float
     hotspots: list[HotspotModel] = Field(default_factory=list)
+
+
+class GuardAttemptModel(BaseModel):
+    attempt: int
+    status: str
+    note: str = ""
+
+
+class GuardTestModel(BaseModel):
+    """A regression test for the fix, offered ONLY when it was proven in sandbox
+    runs: red on the regressed commit (an assertion failure, not a crash) and
+    green with the fix applied. `test_code` is None when no such test was found —
+    an unproven test is never shipped."""
+    status: Literal["verified", "not_verified"]
+    file_name: str
+    command: str
+    test_code: str | None = None
+    asserts: str = ""
+    reason: str | None = None
+    fails_without_fix: bool | None = None
+    passes_with_fix: bool | None = None
+    # Extra evidence, not a gate: also green on the last good commit?
+    passes_on_good: bool | None = None
+    attempts: list[GuardAttemptModel] = Field(default_factory=list)
 
 
 class CommitModel(BaseModel):
@@ -182,6 +211,7 @@ class JobState(BaseModel):
     skipped: list[SkippedModel] = Field(default_factory=list)
     test_command: str | None = None
     tests_guard: Literal["active", "baseline_failing", "unavailable"] | None = None
+    guard_test: GuardTestModel | None = None
 
 
 class JobSummary(BaseModel):

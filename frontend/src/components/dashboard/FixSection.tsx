@@ -40,16 +40,28 @@ function FixSummary({ fix, guard }: { fix: Fix; guard?: JobState["tests_guard"] 
   );
 }
 
-function AttemptRow({ attempt }: { attempt: FixAttempt }) {
+function AttemptRow({ attempt, best }: { attempt: FixAttempt; best: boolean }) {
+  const inRound = attempt.candidate != null;
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <LiveDot variant={attempt.resolved ? "resolved" : "unresolved"} />
-        <span className="font-mono text-xs text-muted">Attempt {attempt.attempt}</span>
+        <span className="font-mono text-xs text-muted">
+          {inRound ? `Round ${attempt.round ?? 1} · candidate ${attempt.candidate}` : `Attempt ${attempt.attempt}`}
+        </span>
+        {/* Strictly from attempt.selected: the verified candidate that was kept. */}
+        {inRound && attempt.selected && <Pill variant="iris">{best ? "Kept — best verified" : "Kept"}</Pill>}
         <Pill variant={attempt.resolved ? "resolved" : "unresolved"}>
-          {attempt.resolved ? "Resolved" : attempt.tests_passed === false ? "Fast, but tests failed" : "Still regressed"}
+          {attempt.resolved
+            ? "Verified"
+            : attempt.error
+              ? "Did not run cleanly"
+              : attempt.tests_passed === false
+                ? "Fast, but tests failed"
+                : "Still regressed"}
         </Pill>
-        <span className="font-mono text-xs text-muted">{formatScore(attempt.score_after)}</span>
+        {/* A crashed attempt never produced a measurement: no placeholder score. */}
+        {!attempt.error && <span className="font-mono text-xs text-muted">{formatScore(attempt.score_after)}</span>}
       </div>
       {attempt.tests_passed === false && attempt.test_output && (
         <details className="text-xs text-muted">
@@ -83,14 +95,21 @@ export function FixSection({
     );
   }
 
+  const verifiedCount = attempts.filter((a) => a.candidate != null && a.resolved).length;
   return (
     <div className="space-y-4">
       <SectionLabel>Fix</SectionLabel>
       {fix && <FixSummary fix={fix} guard={guard} />}
+      {attempts.some((a) => a.candidate != null) && (
+        <p className="text-xs leading-relaxed text-muted">
+          Several different fixes were proposed per round and benchmarked. Only a verified one can be kept, and the best-measured
+          verified one was.
+        </p>
+      )}
       <div className="space-y-5 divide-y divide-line">
         {attempts.map((attempt) => (
           <div key={attempt.attempt} className={attempt.attempt > 1 ? "pt-4" : ""}>
-            <AttemptRow attempt={attempt} />
+            <AttemptRow attempt={attempt} best={verifiedCount > 1} />
           </div>
         ))}
       </div>

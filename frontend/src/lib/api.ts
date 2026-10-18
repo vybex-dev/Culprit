@@ -104,6 +104,10 @@ export function patchUrl(jobId: string): string {
   return `${apiBase()}/jobs/${encodeURIComponent(jobId)}/fix.patch`;
 }
 
+export function guardTestUrl(jobId: string): string {
+  return `${apiBase()}/jobs/${encodeURIComponent(jobId)}/guard-test.py`;
+}
+
 export async function fetchReportMarkdown(jobId: string): Promise<string> {
   const res = await fetch(reportUrl(jobId), { cache: "no-store" });
   if (!res.ok) throw new ApiError(res.status, await parseErrorDetail(res));

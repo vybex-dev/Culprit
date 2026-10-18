@@ -137,9 +137,48 @@ def render_report(job: JobState, metrics: dict[str, Any] | None = None) -> str:
         add("```diff")
         add(job.fix.patch_diff.rstrip())
         add("```\n")
-        if len(job.fix_attempts) > 1:
+        if any(a.candidate for a in job.fix_attempts):
+            add("**Candidates tried** — several different fixes were proposed per round and benchmarked; only a "
+                "verified one can be kept, and the best-measured verified one was.\n")
+            add("| Round | Candidate | Result | Median | Kept |")
+            add("|---|---|---|---|---|")
+            for a in job.fix_attempts:
+                if a.error:
+                    result, med = "did not run cleanly", "—"
+                elif a.resolved:
+                    result, med = "verified", _fmt_ms(a.score_after)
+                elif a.tests_passed is False:
+                    result, med = "fast, but broke the tests", _fmt_ms(a.score_after)
+                else:
+                    result, med = "still regressed", _fmt_ms(a.score_after)
+                add(f"| {a.round or '?'} | {a.candidate or '?'} | {result} | {med} | {'✅' if a.selected else ''} |")
+            add("")
+        elif len(job.fix_attempts) > 1:
             add(f"<sub>{len(job.fix_attempts)} attempts were made; scores after each: "
                 + ", ".join(_fmt_ms(a.score_after) for a in job.fix_attempts) + ".</sub>\n")
+
+    g = job.guard_test
+    if g is not None:
+        add("### Regression guard test\n")
+        if g.status == "verified" and g.test_code:
+            tail = ""
+            if g.passes_on_good is True:
+                tail = " It is also green on the last good commit, so it encodes the intended behaviour."
+            elif g.passes_on_good is False:
+                tail = (" It is **not** green on the last good commit, so it may be tied to this fix's exact shape — "
+                        "review it before relying on it.")
+            add("✅ **Proven in sandbox runs.** The test below **fails** on the regressed commit (an assertion failure, "
+                f"not a crash) and **passes** with the fix applied.{tail}\n")
+            if g.asserts:
+                add(f"It pins: {g.asserts.strip()}\n")
+            add(f"Save it as `{g.file_name}` in the repository root and run `{g.command}`. It asserts a "
+                "deterministic count, never wall-clock time, so it will not flake.\n")
+            add("```python")
+            add(g.test_code.rstrip())
+            add("```\n")
+        else:
+            add("ℹ️ **No regression test was shipped.** A test is only offered when it is proven to fail on the regressed "
+                f"code and pass with the fix — none was: {g.reason or 'no usable test was produced'}.\n")
 
     if job.probes:
         n_search = max(0, len(job.probes) - 1)

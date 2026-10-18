@@ -31,6 +31,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import venv
 from abc import ABC, abstractmethod
@@ -214,6 +215,12 @@ class LocalGitSandbox(Sandbox):
         )
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.timeout_s = timeout_s
+        # Two probes must not build the same cached venv at once (parallel search).
+        self._venv_lock = threading.Lock()
+        # `git worktree add/remove` on one repo write shared metadata in .git/worktrees;
+        # run concurrently they corrupt each other ("failed to read .../commondir").
+        # Only these quick git calls are serialized — the benchmarks themselves still overlap.
+        self._git_lock = threading.Lock()
 
     # Python-only, per AGENTS.md's "one ecosystem, go deep" rule. Both of these
     # are formats `pip install -r` can actually consume. poetry.lock/uv.lock
@@ -221,6 +228,10 @@ class LocalGitSandbox(Sandbox):
     # detecting one just produced a hash for an install step that silently
     # installed nothing and then cached that empty venv as "good."
     _LOCKFILE_CANDIDATES = ("requirements.txt", "requirements.lock")
+
+    def _wt_run(self, *args: Any, **kw: Any) -> subprocess.CompletedProcess:
+        with self._git_lock:
+            return subprocess.run(*args, **kw)
 
     def _find_lockfile(self, worktree: Path) -> Path | None:
         for name in self._LOCKFILE_CANDIDATES:
@@ -234,6 +245,10 @@ class LocalGitSandbox(Sandbox):
         return hashlib.sha256(lockfile.read_bytes()).hexdigest()[:16] if lockfile else None
 
     def _venv_for_hash(self, lock_hash: str | None, worktree: Path) -> tuple[Path, bool]:
+        with self._venv_lock:
+            return self._venv_for_hash_locked(lock_hash, worktree)
+
+    def _venv_for_hash_locked(self, lock_hash: str | None, worktree: Path) -> tuple[Path, bool]:
         """Returns (venv_dir, is_ephemeral). Ephemeral venvs (no lockfile
         found) are the caller's responsibility to clean up."""
         if lock_hash is None:
@@ -303,7 +318,7 @@ class LocalGitSandbox(Sandbox):
         try:
             t_checkout = time.perf_counter()
             try:
-                proc = subprocess.run(
+                proc = self._wt_run(
                     ["git", "worktree", "add", "--detach", str(worktree), commit_sha],
                     cwd=self.repo_path, capture_output=True, text=True, timeout=60,
                 )
@@ -362,7 +377,7 @@ class LocalGitSandbox(Sandbox):
                 commit_sha=commit_sha, raw_scores=scores, stdout_tail=last_stdout, patched=patch is not None,
             )
         finally:
-            subprocess.run(
+            self._wt_run(
                 ["git", "worktree", "remove", "--force", str(worktree)],
                 cwd=self.repo_path, capture_output=True, text=True,
             )
@@ -380,7 +395,7 @@ class LocalGitSandbox(Sandbox):
         venv_is_ephemeral = False
         try:
             try:
-                proc = subprocess.run(
+                proc = self._wt_run(
                     ["git", "worktree", "add", "--detach", str(worktree), commit_sha],
                     cwd=self.repo_path, capture_output=True, text=True, timeout=60,
                 )
@@ -418,7 +433,7 @@ class LocalGitSandbox(Sandbox):
                          dur_s=result.duration_s, patched=patch is not None, timed_out=result.timed_out)
             return result
         finally:
-            subprocess.run(
+            self._wt_run(
                 ["git", "worktree", "remove", "--force", str(worktree)],
                 cwd=self.repo_path, capture_output=True, text=True,
             )
@@ -437,7 +452,7 @@ class LocalGitSandbox(Sandbox):
         venv_is_ephemeral = False
         try:
             try:
-                proc = subprocess.run(
+                proc = self._wt_run(
                     ["git", "worktree", "add", "--detach", str(worktree), commit_sha],
                     cwd=self.repo_path, capture_output=True, text=True, timeout=60,
                 )
@@ -471,7 +486,7 @@ class LocalGitSandbox(Sandbox):
             return ProfileRun(commit_sha=commit_sha, blobs=blobs, root=str(worktree),
                               stdout_tail=run.stdout.strip()[-300:])
         finally:
-            subprocess.run(
+            self._wt_run(
                 ["git", "worktree", "remove", "--force", str(worktree)],
                 cwd=self.repo_path, capture_output=True, text=True,
             )
@@ -535,6 +550,7 @@ class TokenFactorySandbox(Sandbox):
         self.timeout_s = timeout_s
         self.poll_interval_s = poll_interval_s
         self._http = client or httpx.Client(timeout=60.0)
+        self._image_lock = threading.Lock()  # one image import even when probes start together
 
     # -- HTTP helpers -------------------------------------------------------
     def _headers(self) -> dict[str, str]:
@@ -595,6 +611,12 @@ class TokenFactorySandbox(Sandbox):
     def _resolve_image(self) -> str:
         if self._image:
             return self._image
+        with self._image_lock:
+            if self._image:  # another probe imported it while we waited
+                return self._image
+            return self._import_image()
+
+    def _import_image(self) -> str:
         # UNVERIFIED body shape (inferred from ImageImportMetadata) — prefer
         # setting CONTREE_IMAGE. Cached on the instance so we import once.
         r = self._post("/images/import", {

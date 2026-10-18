@@ -7,7 +7,7 @@
 "use client";
 
 import { useState } from "react";
-import { fetchReportMarkdown, patchUrl, reportUrl } from "@/lib/api";
+import { fetchReportMarkdown, guardTestUrl, patchUrl, reportUrl } from "@/lib/api";
 import type { JobState } from "@/lib/types";
 
 function Btn({ children, onClick, href, title }: { children: React.ReactNode; onClick?: () => void; href?: string; title?: string }) {
@@ -51,6 +51,11 @@ export function ExportBar({ job }: { job: JobState }) {
       {hasFix && (
         <Btn href={patchUrl(job.job_id)} title={job.fix?.verified ? "A patch verified by a sandbox re-run" : "Unverified — review before applying"}>
           Download .patch{job.fix?.verified ? "" : " (unverified)"}
+        </Btn>
+      )}
+      {job.guard_test?.status === "verified" && (
+        <Btn href={guardTestUrl(job.job_id)} title="A regression test proven red on the regressed code and green with the fix">
+          Download regression test
         </Btn>
       )}
     </div>
