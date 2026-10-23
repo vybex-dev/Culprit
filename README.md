@@ -53,7 +53,7 @@ Performance regressions hide in innocent-looking commits — _"refactor: simplif
 Give Culprit **a repository** and **a benchmark command**. It will:
 
 1. **Bisect** the commit history — every candidate commit benchmarked in a _fresh, isolated_ **Token Factory Sandbox** — to find the exact commit where the benchmark crossed a regression threshold.
-2. **Measure, then diagnose.** It profiles the benchmark (cProfile, via a `sitecustomize` shim — your command is untouched) on the last good commit and the guilty one, so the diagnosis can quote real call counts ("`query`: 6 → 186 calls"). Then **NVIDIA Nemotron 3 Ultra** diagnoses the guilty diff, forced to cite the specific lines responsible (each citation is checked against the real diff), and ground the finding with **Tavily** web search.
+2. **Measure, then diagnose.** It profiles the benchmark (cProfile, via a `sitecustomize` shim — your command is untouched) on the last good commit and the guilty one, so the diagnosis can quote real call counts ("`query`: 6 → 186 calls") — and the Fixer is shown the same measured hotspots, so it aims at what is actually expensive. Then **NVIDIA Nemotron 3 Ultra** diagnoses the guilty diff, forced to cite the specific lines responsible (each citation is checked against the real diff), and ground the finding with **Tavily** web search.
 3. **Fix** it: Nemotron 3 Ultra proposes an exact-text edit, which is turned into a real unified diff. On Token Factory it proposes **three different fixes at once** (a minimal one, a revert-style one, a batching/caching one…), benchmarks each in its own isolated VM, and keeps the best one that actually verified.
 4. **Prove** it: the benchmark is re-run on the _patched_ code in a sandbox. The fix is called **"verified" only if that re-run actually came back within threshold.**
 5. **Lock it in.** Ultra writes a small regression test that pins the _root cause_ as a deterministic count (e.g. "`query` is called at most 124 times on the benchmark path") — never a timing. The sandbox then runs it **twice**: it must **fail** on the regressed commit (an assertion, not a crash) and **pass** with the fix applied. Only a test that clears both is offered; otherwise Culprit ships none and says why.
@@ -82,7 +82,7 @@ Culprit uses **two Nemotron models, deliberately tiered** — model routing is p
 
 | Model                            | Role                                                                                                                                                                                   | Why this model                                                                                                                                    |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Nemotron 3 Nano** (30B-A3B)    | **Bisector control flow.** For every benchmarked commit it returns `clean` / `regressed` / `inconclusive (run more)`, plus how many extra runs to collect.                             | A high-frequency, latency-sensitive judgement — the small, fast model is the right tool. In a typical run **Nano makes about two-thirds of all model calls.** |
+| **Nemotron 3 Nano** (30B-A3B)    | **Bisector control flow.** For every benchmarked commit it returns `clean` / `regressed` / `inconclusive (run more)`, plus how many extra runs to collect. **File triage.** On a guilty commit touching 4+ files, it ranks the files most-likely-cause first so size caps cut the least likely ones (order only; nothing hidden). **Patch reviewer.** A further job: it screens every candidate fix and flags patches that look tuned to the benchmark, hard-code results, or drop checks (advisory — see below). | High-frequency, latency-sensitive judgements — the small, fast model is the right tool. **Nano makes most of the model calls** (about 70% in the bundled demo).                  |
 | **Nemotron 3 Ultra** (550B-A55B) | **Reasoning.** Three steps: the **Diagnoser** (root-cause category + cited lines, long diff + file context), the **Fixer** (exact-text edits, retried with failure feedback) and, once a fix is verified, the **guard-test writer** (a call-count regression test the sandbox must prove). | The only steps that need deep reasoning and a long context window, so the large model is spent only there.                                        |
 
 All inference goes through the **Nebius Token Factory** OpenAI-compatible API (`https://api.tokenfactory.nebius.com/v1`). Token counts shown in the dashboard come from the API's own `usage` block — never estimated.
@@ -195,9 +195,10 @@ These are enforced in code (see `AGENTS.md`, rule 1), not just promised:
 - Benchmark numbers come **only** from real runs. "Verified" mirrors a real sandbox verdict and nothing else.
 - A fix that doesn't resolve the regression is reported as **unresolved**, with all attempts — never dressed up.
 - A patch that crashes is a failed attempt with **no score**.
-- Profile evidence is **measured or absent** — a non-Python benchmark, a crash, or a backend that can't profile means "no profile" (shown as skipped), never an estimate; it can't fail a job. `CULPRIT_PROFILE=0` turns it off.
+- Profile evidence is **measured or absent** — a non-Python benchmark, a crash, or a backend that can't profile means "no profile" (shown as skipped), never an estimate; it can't fail a job. With no profile, the Diagnoser and Fixer prompts are exactly what they were before. `CULPRIT_PROFILE=0` turns it off.
 - **A fast-but-broken patch is not a fix.** If you pass a `test_command`, it must be green on the regressed commit (so it can actually judge) *and* on the patched code — otherwise the attempt is rejected, the failure output is fed back to Nemotron, and the job never says "verified". If the suite is already red or can't run, Culprit says so and verifies on performance only.
 - **Best-of-N can't launder a bad fix.** With several candidates per round, only a candidate whose own sandbox re-run came back within threshold (and green on your tests, if you gave a test command) is eligible; the winner is the best *measured* one among those. A candidate that doesn't apply or crashes is shown with no score. If none verifies, the job is unresolved and lists every attempt. Locally, candidates are still *proposed* in parallel but *benchmarked one at a time*, since concurrent benchmarks on one CPU would corrupt each other's timings.
+- **The patch review is advisory and never decides anything.** Nano screens every candidate for the ways a "fix" can fool a benchmark (special-casing its inputs, hard-coding results, skipping work or checks, swallowing errors). Its verdict is shown next to the attempt, in the terminal and in the PR report — but it cannot mark a fix verified, un-verify one, or pick the winner; the sandbox does all of that, and a failed review simply means "no review". Two rules are plain code, no model: with a `test_command`, a patch that edits a test file is rejected before it is run; a patch that edits the benchmark script itself is always flagged (it changes what is measured). `CULPRIT_PATCH_REVIEW=0` turns off the Nano screen only; the rules stay on.
 - **A regression test is shipped only if it was proven.** It must fail (by assertion) on the regressed commit *and* pass with the fix in real sandbox runs; a test that passes on the regression, crashes, or fails with the fix is discarded and the job says no test was found. It is also run on the last good commit and flagged if it isn't green there. This stage is extra evidence — it can never fail a job or change its result. `CULPRIT_GUARD_TEST=0` turns it off.
 - A diagnosis whose cited lines aren't in the diff is retried once, then downgraded to `other`.
 - Tavily results below the relevance floor are dropped, not cited.
@@ -313,6 +314,8 @@ All settings are environment variables (read from `backend/.env`; real shell var
 | `BENCHMARK_N_RUNS`                                     | `5`                                             | runs per probed commit                                                 |
 | `BISECT_PARALLELISM`                                   | `auto`                                          | commits probed at once: `auto` = 3 on Token Factory, 1 locally; a number (max 6) forces it |
 | `FIX_CANDIDATES`                                       | `auto`                                          | different fixes proposed per round: `auto` = 3 on Token Factory, 1 locally; a number (max 5) forces it. Rounds ≤ 3 |
+| `CULPRIT_TRIAGE`                                       | `1`                                             | `0` turns off Nano's file ranking of a big guilty commit |
+| `CULPRIT_PATCH_REVIEW`                                 | `1`                                             | `0` turns off Nano's advisory patch review (the test-file rule and benchmark-edit flag always apply) |
 | `AUTO_RANGE_COMMITS`                                   | `30`                                            | when no range is given, search the last N first-parent commits         |
 | `MAX_CONCURRENT_JOBS`                                  | `2`                                             | extra jobs genuinely wait in `queued`                                  |
 | `CORS_ALLOWED_ORIGINS`                                 | `http://localhost:3000`                         | comma-separated dashboard origins                                      |
@@ -376,6 +379,8 @@ Then watch `/job/<job_id>`, download `/jobs/<job_id>/report.md` and `/jobs/<job_
 **Job statuses:** `queued → bisecting → diagnosing → fixing → done`, or `failed` / `cancelled`.
 **Final results:** `resolved` · `unresolved_diagnosis_only` · no regression in range.
 
+A regression in a real open-source project (`tabulate`, 205 commits, measured and bisected) is written up in [`docs/REAL_WORLD_CASE.md`](docs/REAL_WORLD_CASE.md).
+
 Wire models live in `backend/schema.py`; the event vocabulary and agent JSON contracts are documented in [`docs/AGENT_SPECS.md`](docs/AGENT_SPECS.md).
 
 ---
@@ -409,6 +414,7 @@ backend/
   fixer.py          Nemotron 3 Ultra edits + sandboxed verification loop (≤3 attempts)
   patcher.py        exact-text edits → real unified diff (and new-file patches)
   guardtest.py      Ultra writes a regression test; the sandbox must prove it red→green
+  reviewer.py       test-file rule + benchmark-edit flag + Nano's advisory patch review
   sandbox_client.py Token Factory sandbox + local git-worktree sandbox (same contract)
   models.py         Nebius Token Factory / Nemotron client (retries, usage accounting)
   tavily_client.py  Tavily REST client with relevance floor

@@ -87,6 +87,14 @@ export interface FixAttempt {
   candidate?: number | null;
   /** The verified candidate that was kept. */
   selected?: boolean;
+  /** Nano's ADVISORY screen of this patch (or a deterministic rule's flag). Evidence
+   * only: it never decides "verified" and never picks a winner. null/absent ⇒ no review. */
+  review?: PatchReview | null;
+}
+
+export interface PatchReview {
+  verdict: "ok" | "suspicious";
+  concerns: string[];
 }
 
 /** One function whose cost grew between the last good commit and the guilty one. */

@@ -64,8 +64,16 @@ class DiagnosisModel(BaseModel):
     diff: str | None = None
 
 
+class ReviewModel(BaseModel):
+    """Nano's ADVISORY screen of a candidate patch (reviewer.py). Evidence for the
+    human who merges; never what decides "verified" or which candidate wins."""
+    verdict: Literal["ok", "suspicious"]
+    concerns: list[str] = Field(default_factory=list)
+
+
 class FixAttemptModel(BaseModel):
     attempt: int
+    review: ReviewModel | None = None
     # Best-of-N (additive): set only when the job proposed several candidate fixes
     # per round. `selected` marks the verified candidate that was kept.
     round: int | None = None

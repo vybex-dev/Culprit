@@ -137,6 +137,17 @@ def render_report(job: JobState, metrics: dict[str, Any] | None = None) -> str:
         add("```diff")
         add(job.fix.patch_diff.rstrip())
         add("```\n")
+        shipped = next((a for a in job.fix_attempts if a.patch == job.fix.patch_diff and a.review), None)
+        if shipped is not None and shipped.review is not None:
+            if shipped.review.verdict == "suspicious":
+                add("⚠️ **Nano's advisory review flagged this patch** — it may speed up the benchmark without speeding up "
+                    "the real work. Read it carefully before merging:\n")
+                for c in shipped.review.concerns:
+                    add(f"- {c}")
+                add("")
+            else:
+                add("🔎 Nano's advisory review of this patch found no red flags. (It is a screen, not a proof — "
+                    "verification above is the sandbox run.)\n")
         if any(a.candidate for a in job.fix_attempts):
             add("**Candidates tried** — several different fixes were proposed per round and benchmarked; only a "
                 "verified one can be kept, and the best-measured verified one was.\n")

@@ -285,3 +285,21 @@ With `FIX_CANDIDATES` > 1 the §3 loop becomes rounds (max 3): each round the Fi
 
 **Job state:** `fix_attempts[]` gain `round`, `candidate`, `selected` (null / null / false for a plain sequential run). Events: `fixround.start`/`fixround.end` (span), `fix.selected`, `fix.candidate_failed`; each candidate still has its own `fix.start`/`fix.end` span and `patch.built`.
 
+## 9. Patch reviewer (Nano + rules) — added in implementation
+
+Every candidate patch is screened before and while it is benchmarked. Two layers, neither of which can verify or promote a fix:
+
+**Rules (plain code, `reviewer.py`).** (a) *Hard:* when the job has a `test_command`, a patch touching a test file (`test_*.py`, `*_test.py`, `conftest.py`, `test(s)/` dirs, any path the test command names) is rejected as a failed attempt **before a sandbox run is spent**; the reason is returned to the Fixer in `previous_attempt_result`. Event `patch.rejected`. (b) *Flag:* a patch that edits the benchmark script itself (`python x.py` / `python -m pkg.mod`) changes what is measured, so it is not refused (a toy repo's benchmark may be the code) but is always marked `suspicious` with that reason. Event `review.rule`.
+
+**Nano review (`model="nano"`, `step="review:attempt=N"`, temperature 0.1, advisory).** Input: `{patch_to_review, diagnosis: {category, explanation, cited_lines}, benchmark_command, project_has_tests}`.
+
+**Output (strict JSON):** `{ "verdict": "ok" | "suspicious", "concerns": ["<one sentence>", ...] }` — at most 3 concerns of ≤300 chars; `ok` carries none; `suspicious` always carries at least one. A schema-invalid reply or a failed call is *no review* (event `review.unavailable`) — never approval, never rejection.
+
+**Rules the model is given:** mark `suspicious` for special-casing the benchmark's inputs or script, hard-coded/precomputed results, skipped or weakened work, validation, checks or limits, swallowed errors, disabled features, reduced precision, or edits to benchmark/tests; reverting the regressing change, batching, correct caching and better algorithms are `ok`. Judge only what the diff shows.
+
+**It runs concurrently with the attempt's benchmark and never influences it:** `resolved`, `verified`, candidate selection and the guard test are decided by sandbox runs alone. **Job state:** `fix_attempts[].review: {verdict, concerns[]} | null` (a benchmark-edit flag is merged in as the first concern). Events: `review.result`, `review.rule`, `review.unavailable`. The PR report shows ⚠️ concerns (or a "no red flags" line) for the shipped patch. `CULPRIT_PATCH_REVIEW=0` disables the Nano call only; the rules always apply.
+
+## 10. Fixer sees the measured profile (added in implementation)
+
+When the job has `profile_evidence` (§2), the Fixer's input gains one optional field, `profile_evidence: {hotspots: [{func, file, line, project, calls_before, calls_after, cum_before_s, cum_after_s}, ...]}` (top 5, the §2 evidence with the `self_*` timings dropped), and `PROFILE_EVIDENCE_ADDENDUM` (`backend/fixer.py`) is appended to the system prompt (after the §8 approach addendum, if any). It tells the model the profile is measured, to aim the fix at what it shows is expensive, to trust call counts over absolute times, and that it can only edit files shown in `full_file_contents`. The output schema and temperature are unchanged. With no profile (non-Python benchmark, profiling off or failed) the call is byte-for-byte §3 / §8. The profile informs the proposal only; whether the fix worked is still decided by the sandbox re-run.
+

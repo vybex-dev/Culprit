@@ -102,6 +102,7 @@ load_dotenv(Path(__file__).with_name(".env"))
 
 import guardtest
 import profiler
+import reviewer
 from bisector import ProbeRecord, bisect_repo
 from demo_repo import BENCHMARK_COMMAND as DEMO_BENCHMARK_COMMAND, build_demo_repo
 from diagnoser import DiagnosisResult, diagnose
@@ -128,6 +129,7 @@ from schema import (  # noqa: F401 — re-exported: `from api import InMemoryJob
     JobSummary,
     ProbeModel,
     ProfileModel,
+    ReviewModel,
     SkippedModel,
     SqliteEventStore,
     SqliteJobStore,
@@ -149,6 +151,9 @@ _PROFILE_ENABLED = os.environ.get("CULPRIT_PROFILE", "1") != "0"
 # After a verified fix, write + PROVE a regression-guard test (guardtest.py).
 # Best-effort extra evidence; CULPRIT_GUARD_TEST=0 turns it off.
 _GUARD_TEST_ENABLED = os.environ.get("CULPRIT_GUARD_TEST", "1") != "0"
+# Nano's advisory review of every candidate patch (reviewer.py). The hard rule that a
+# patch may not edit the benchmark/tests is NOT switchable — only the model screen is.
+_PATCH_REVIEW_ENABLED = os.environ.get("CULPRIT_PATCH_REVIEW", "1") != "0"
 # How many commits the bisection probes at once. "auto" (default) = 3 on Token
 # Factory, where every probe is its own isolated VM so concurrent benchmarks
 # can't disturb each other, and 1 on the local sandbox, where they would share a
@@ -811,6 +816,63 @@ def _run_analysis(
                 _verify_tl.ctx = None
 
         def _verify_one(proposal: FixProposal, n: int) -> VerifyOutcome:
+            # 1. Hard rule: with a test command, a fix may not edit the tests that vouch for it.
+            #    Rejected without spending a sandbox run.
+            bad = reviewer.forbidden_edits(proposal.patch, test_command=test_command)
+            if bad:
+                note = reviewer.rejection_note(bad)
+                reporter.emit("patch.rejected", "sandbox",
+                              f"patch rejected without running it — it edits {bad[0][0]} ({bad[0][1]})",
+                              attempt=n, error=note)
+                return VerifyOutcome(score_after=regressed_score, resolved=False, note=note)
+
+            # 2. Advisory screen by Nano, concurrent with the benchmark. Evidence only: it
+            #    never changes the outcome, and a failed review is just "no review".
+            box: dict[str, Any] = {}
+
+            def _review() -> None:
+                try:
+                    rv = reviewer.review_patch(
+                        job_id=job_id, diagnosis=dataclasses.asdict(diagnosis_result), patch=proposal.patch,
+                        benchmark_command=benchmark_command, has_tests=bool(test_command), attempt=n,
+                        reporter=reporter,
+                    )
+                except Exception as e:  # noqa: BLE001 — advisory; never fails an attempt
+                    log.warning("api.patch_review_unavailable", job_id=job_id, attempt=n, error=f"{type(e).__name__}: {e}")
+                    reporter.emit("review.unavailable", "nano",
+                                  "patch review unavailable — the attempt is judged on its sandbox run alone",
+                                  attempt=n, error=str(e)[:300])
+                    return
+                box["review"] = rv.to_dict()
+                reporter.emit(
+                    "review.result", "nano",
+                    "patch review (Nano): no red flags" if rv.verdict == "ok"
+                    else "patch review (Nano) FLAGGED this patch — " + "; ".join(rv.concerns),
+                    attempt=n, verdict=rv.verdict, concerns=rv.concerns,
+                )
+
+            reviewer_thread = None
+            if _PATCH_REVIEW_ENABLED:
+                reviewer_thread = threading.Thread(target=_review, name="culprit-review", daemon=True)
+                reviewer_thread.start()
+            try:
+                out = _verify_core(proposal, n)
+            finally:
+                if reviewer_thread is not None:
+                    reviewer_thread.join()
+            review = box.get("review")
+            # Deterministic flag, independent of the model screen (see reviewer.py): a patch
+            # that edits the benchmark script changes what is measured.
+            edited = reviewer.benchmark_edits(proposal.patch, benchmark_command=benchmark_command)
+            if edited:
+                concern = reviewer.benchmark_edit_concern(edited)
+                review = {"verdict": "suspicious", "concerns": [concern] + (review or {}).get("concerns", [])}
+                reporter.emit("review.rule", "sandbox", f"flagged: {concern}", attempt=n, verdict="suspicious",
+                              concerns=[concern])
+            out.review = review
+            return out
+
+        def _verify_core(proposal: FixProposal, n: int) -> VerifyOutcome:
             try:
                 bench_result = sandbox.apply_patch_and_benchmark(
                     result.regression_commit, proposal.patch, benchmark_command, n_runs=n_runs,
@@ -893,6 +955,7 @@ def _run_analysis(
                 tests_passed=a.tests_passed, test_output=a.test_output or None,
                 round=a.round or None, candidate=a.candidate or None,
                 selected=bool(a.selected) or (selected_attempt is not None and a.attempt == selected_attempt),
+                review=ReviewModel(**a.review) if a.review else None,
             )
 
         def _on_attempt(a) -> None:
@@ -920,6 +983,7 @@ def _run_analysis(
             reporter=reporter,
             candidates=fix_candidates,
             verify_parallelism=fix_candidates if use_token_factory else 1,
+            profile_hotspots=(profile_evidence or {}).get("hotspots"),
         )
 
         # ---- regression guard test (optional, best-effort) ---------------

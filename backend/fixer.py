@@ -149,6 +149,9 @@ class VerifyOutcome:
     tests_passed: bool | None = None  # None = tests were not run (guard off, or perf already failed)
     tests_note: str = ""  # why the tests rejected the patch; fed back to the model on retry
     test_output: str = ""  # tail of the test run, kept for the UI
+    # Advisory patch review (reviewer.py): {"verdict": "ok"|"suspicious", "concerns": [...]} or None when
+    # no review happened. Evidence only — it never changes `resolved` and never picks a winner.
+    review: dict | None = None
 
 
 @dataclass
@@ -171,6 +174,7 @@ class FixAttemptRecord:
     round: int = 0
     candidate: int = 0
     selected: bool = False
+    review: dict | None = None  # see VerifyOutcome.review
 
 
 @dataclass
@@ -257,7 +261,7 @@ def run_fix_loop(
         record = FixAttemptRecord(
             attempt=attempt_number, patch=proposal.patch, rationale=proposal.rationale,
             score_after=outcome.score_after, resolved=outcome.resolved, error=outcome.note,
-            tests_passed=outcome.tests_passed, test_output=outcome.test_output,
+            tests_passed=outcome.tests_passed, test_output=outcome.test_output, review=outcome.review,
         )
         attempts.append(record)
         rep.end(
@@ -326,6 +330,34 @@ You are one of several engineers working on this same regression IN PARALLEL;
 each of you is given a different "approach" in the input. Follow yours. Every
 candidate is benchmarked, and only the one that verifies best is kept, so a
 distinct, correct idea is worth more than a copy of the obvious fix."""
+
+
+# Appended only when the job has a measured profile with hotspots (see profiler.py).
+# The OUTPUT schema is unchanged; "old" text must still come from the files shown.
+PROFILE_EVIDENCE_ADDENDUM = """
+
+The input also includes profile_evidence: a cProfile of the benchmark on the
+last good commit and the guilty commit, listing the functions whose cost grew
+the most (calls_before -> calls_after, cumulative seconds before -> after). It
+is MEASURED, not inferred. Aim your fix at what the profile shows is actually
+expensive, not just at what the diff looks like. Profiler overhead inflates
+absolute times; trust call counts and relative growth. You can only edit the
+files shown in full_file_contents, so if the hotspot is in a function you
+cannot see, fix its caller in the files you can. Edits must still copy "old"
+text exactly from those files."""
+
+_PROFILE_FIELDS = ("func", "file", "line", "project", "calls_before", "calls_after", "cum_before_s", "cum_after_s")
+MAX_PROFILE_HOTSPOTS = 5
+
+
+def compact_profile(hotspots: list[dict] | None) -> dict | None:
+    """The slice of the job's profile the Fixer is shown (top hotspots, key fields only),
+    or None when there is nothing measured to show — in which case the Fixer's call is
+    byte-for-byte what it was before this feature."""
+    if not hotspots:
+        return None
+    rows = [{k: h[k] for k in _PROFILE_FIELDS if k in h} for h in hotspots[:MAX_PROFILE_HOTSPOTS]]
+    return {"hotspots": rows}
 
 
 def _patch_size(patch: str) -> int:
@@ -442,6 +474,7 @@ def run_fix_rounds(
             rec = FixAttemptRecord(
                 attempt=n, patch=p.patch, rationale=p.rationale, score_after=out.score_after, resolved=out.resolved,
                 error=out.note, tests_passed=out.tests_passed, test_output=out.test_output, round=rnd, candidate=c,
+                review=out.review,
             )
             rep.end(
                 span,
@@ -531,6 +564,7 @@ def propose_patch(
     reporter: Reporter | None = None,
     approach: str | None = None,
     candidate: int | None = None,
+    profile_hotspots: list[dict] | None = None,
 ) -> FixProposal:
     """One real Nemotron Ultra call, per AGENT_SPECS.md §3's input schema.
     `diagnosis` should be a plain dict (e.g. dataclasses.asdict() of
@@ -554,6 +588,10 @@ def propose_patch(
     if approach:  # best-of-N only; a single-candidate call is byte-for-byte what it always was
         payload["approach"] = approach
         system_prompt = FIXER_SYSTEM_PROMPT + FIXER_APPROACH_ADDENDUM
+    profile = compact_profile(profile_hotspots)
+    if profile:  # measured evidence only; absent => the call is exactly what it always was
+        payload["profile_evidence"] = profile
+        system_prompt += PROFILE_EVIDENCE_ADDENDUM
     result = call_nemotron(
         job_id=job_id,
         step=f"fix:attempt={attempt_number}" + (f":candidate={candidate}" if candidate else ""), model="ultra",
@@ -597,6 +635,7 @@ def run_fix_loop_live(
     reporter: Reporter | None = None,
     candidates: int = 1,
     verify_parallelism: int = 1,
+    profile_hotspots: list[dict] | None = None,
 ) -> FixLoopResult:
     """The real thing: wires run_fix_loop's `propose` slot to real
     Nemotron calls via propose_patch(). `verify` is still the caller's to
@@ -609,6 +648,8 @@ def run_fix_loop_live(
     original sequential loop, unchanged."""
     log.info("fixer.start", job_id=job_id, max_attempts=max_attempts, before_score=before_score,
              candidates=candidates)
+    # Only passed when there is something measured to show, so a call without a profile is unchanged.
+    profile_kw = {"profile_hotspots": profile_hotspots} if profile_hotspots else {}
 
     if candidates > 1:
         k = min(int(candidates), MAX_CANDIDATES)
@@ -618,7 +659,7 @@ def run_fix_loop_live(
             return propose_patch(
                 job_id=job_id, diagnosis=diagnosis, full_file_contents=full_file_contents,
                 attempt_number=rnd, previous_attempt_result=previous, temperature=temperature,
-                approach=APPROACHES[(c - 1) % len(APPROACHES)], candidate=c, **extra,
+                approach=APPROACHES[(c - 1) % len(APPROACHES)], candidate=c, **extra, **profile_kw,
             )
 
         result = run_fix_rounds(
@@ -634,7 +675,7 @@ def run_fix_loop_live(
         return propose_patch(
             job_id=job_id, diagnosis=diagnosis, full_file_contents=full_file_contents,
             attempt_number=attempt_number, previous_attempt_result=previous_attempt_result,
-            temperature=temperature, **extra,
+            temperature=temperature, **extra, **profile_kw,
         )
 
     result = run_fix_loop(

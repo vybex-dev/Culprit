@@ -38,6 +38,8 @@ _CACHE_HINTS = ("cache", "memo", "lru_cache", "@cached")
 
 def offline_call(model: str, payload: dict[str, Any]) -> dict[str, Any]:
     if model == "nano":
+        if "patch_to_review" in payload:  # the advisory patch screen, not a bisect verdict
+            return _patch_review(payload)
         return _nano_verdict(payload)
     if "test_file_name" in payload:  # the guard-test writer (before the fixer: it also carries file contents)
         return _guard_test(payload)
@@ -295,3 +297,37 @@ def _guard_test(payload: dict[str, Any]) -> dict[str, Any]:
         "asserts": f"`{name}` ({h['file']}) is called at most {limit} times on the benchmark path "
                    f"(it was {before} before the regression, {after} with it). [offline stand-in — not Nemotron]",
     }
+
+
+# ---------------------------------------------------------------------------
+# Nano / patch review — a few transparent rules over the diff's changed lines.
+# Advisory like the real thing: it flags, it never gates. Labelled as a stand-in.
+# ---------------------------------------------------------------------------
+
+_CONST_RETURN_RE = re.compile(r"""^\s*return\s+(-?\d+(\.\d+)?|"[^"]*"|'[^']*'|\[\]|\{\}|None|True|False)\s*$""")
+_CHECK_RE = re.compile(r"^\s*(assert\s|raise\s|if\s+not\s+.*:\s*$)")
+
+
+def _patch_review(payload: dict[str, Any]) -> dict[str, Any]:
+    added, removed = _changed(payload["patch_to_review"])
+    concerns: list[str] = []
+    for line in added:
+        if _CONST_RETURN_RE.match(line):
+            concerns.append(f"`{line.strip()}` returns a hard-coded constant, which could be tuned to the benchmark.")
+            break
+    for line in removed:
+        if _CHECK_RE.match(line):
+            concerns.append(f"`{line.strip()}` removes a check or assertion the code relied on.")
+            break
+    for line in removed:
+        if re.match(r"^\s*except\b", line) is None and re.match(r"^\s*try:\s*$", line):
+            concerns.append("removes a try-block, which changes how errors are handled.")
+            break
+    for line in added:
+        if re.match(r"^\s*except\s*(Exception)?\s*:\s*$", line) or line.strip() == "pass":
+            concerns.append(f"`{line.strip()}` swallows errors, which can hide failures behind a faster run.")
+            break
+    if concerns:
+        return {"verdict": "suspicious", "concerns": [c + " [offline stand-in reviewer — not Nemotron]" for c in concerns[:3]]}
+    return {"verdict": "ok", "concerns": []}
+

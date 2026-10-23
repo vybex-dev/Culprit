@@ -251,3 +251,37 @@ test("a fix round shows how many candidates verified, and which one was kept", (
   assert.equal(failed[0].glyph, "warn");
   assert.deepEqual(failed[0].detail, { type: "text", text: "schema-invalid" });
 });
+
+test("the advisory patch review shows as a flag, never as a pass/fail of the fix", () => {
+  seq = 0;
+  const ok = buildRows([ev("review.result", "nano", "patch review (Nano): no red flags", { attempt: 1, verdict: "ok", concerns: [] })]);
+  assert.equal(ok[0].glyph, "ok");
+  assert.ok(ok[0].chips!.some((c) => c.label === "no red flags" && c.tone === "good"));
+  assert.equal(ok[0].detail, undefined);
+  assert.equal(ok[0].depth, 1);
+
+  const bad = buildRows([ev("review.result", "nano", "flagged", { attempt: 1, verdict: "suspicious", concerns: ["hard-codes a result", "drops a check"] })]);
+  assert.equal(bad[0].glyph, "warn");
+  assert.notEqual(bad[0].tone, "bad"); // advisory: a warning, not a failure
+  assert.ok(bad[0].chips!.some((c) => c.label === "flagged"));
+  assert.deepEqual(bad[0].detail, { type: "text", text: "hard-codes a result\ndrops a check" });
+
+  const rule = buildRows([ev("review.rule", "sandbox", "flagged: edits the benchmark", { attempt: 1, verdict: "suspicious", concerns: ["edits bench.py"] })]);
+  assert.equal(rule[0].glyph, "warn");
+  assert.deepEqual(rule[0].detail, { type: "text", text: "edits bench.py" });
+
+  const gone = buildRows([ev("review.unavailable", "nano", "patch review unavailable", { attempt: 1 })]);
+  assert.equal(gone[0].glyph, "warn");
+  assert.equal(gone[0].chips, undefined);
+});
+
+test("file triage shows how many files Nano ranked and degrades quietly", () => {
+  seq = 0;
+  const ok = buildRows([ev("triage.result", "nano", "triaged 9 changed files", { files: 9, order: ["a.py"], relevance: { "a.py": "high" }, by_rule: [] })]);
+  assert.equal(ok[0].glyph, "ok");
+  assert.ok(ok[0].chips!.some((c) => c.label === "9 files ranked"));
+  assert.equal(ok[0].depth, 1);
+  const gone = buildRows([ev("triage.unavailable", "nano", "file triage unavailable", { error: "x" })]);
+  assert.equal(gone[0].glyph, "warn");
+  assert.equal(gone[0].chips, undefined);
+});

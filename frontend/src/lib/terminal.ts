@@ -134,7 +134,7 @@ export function groupOf(source: string): Group {
  * step (checkouts, runs, model calls, citation checks…) indented beneath. */
 function depthOf(kind: string): 0 | 1 {
   if (kind === "sandbox.ready") return 0;
-  return /^(sandbox|model|nano|citation|tavily|patch|verify)\./.test(kind) || kind === "guardtest.attempt" ? 1 : 0;
+  return /^(sandbox|model|nano|citation|tavily|patch|verify|review|triage)\./.test(kind) || kind === "guardtest.attempt" ? 1 : 0;
 }
 
 function base(ev: LogEvent, over: Partial<TermRow>): TermRow {
@@ -519,6 +519,33 @@ function describePoint(ev: LogEvent): TermRow {
         detail: d.output ? { type: "text", text: str(d.output) } : undefined,
       });
     }
+    case "triage.result":
+      return base(ev, {
+        glyph: "ok",
+        tone: "iris",
+        chips: [{ label: `${num(d.files) ?? "?"} files ranked`, tone: "iris", title: "Nano reordered the files; nothing was hidden or changed." }],
+      });
+    case "triage.unavailable":
+      return base(ev, { glyph: "warn", tone: "muted" });
+    case "review.result": {
+      const flagged = d.verdict === "suspicious";
+      const concerns = Array.isArray(d.concerns) ? d.concerns.map((c) => str(c)) : [];
+      return base(ev, {
+        glyph: flagged ? "warn" : "ok",
+        tone: flagged ? "warn" : "good",
+        chips: [{ label: flagged ? "flagged" : "no red flags", tone: flagged ? "warn" : "good", title: "Advisory only — never decides verified." }],
+        detail: flagged && concerns.length ? { type: "text", text: concerns.join("\n") } : undefined,
+      });
+    }
+    case "review.rule":
+      return base(ev, {
+        glyph: "warn",
+        tone: "warn",
+        chips: [{ label: "flagged", tone: "warn", title: "Deterministic rule — advisory only." }],
+        detail: Array.isArray(d.concerns) && d.concerns.length ? { type: "text", text: d.concerns.map((c) => str(c)).join("\n") } : undefined,
+      });
+    case "review.unavailable":
+      return base(ev, { glyph: "warn", tone: "muted" });
     case "patch.rejected":
     case "verify.crashed":
       return base(ev, { glyph: "fail", tone: "bad", detail: d.error ? { type: "text", text: str(d.error) } : undefined });

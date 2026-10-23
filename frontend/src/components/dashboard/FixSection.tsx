@@ -62,7 +62,20 @@ function AttemptRow({ attempt, best }: { attempt: FixAttempt; best: boolean }) {
         </Pill>
         {/* A crashed attempt never produced a measurement: no placeholder score. */}
         {!attempt.error && <span className="font-mono text-xs text-muted">{formatScore(attempt.score_after)}</span>}
+        {/* Advisory only — shown next to the verdict, never part of it. */}
+        {attempt.review?.verdict === "suspicious" && <Pill variant="butter">Reviewer flagged</Pill>}
+        {attempt.review?.verdict === "ok" && <span className="text-xs text-muted">reviewer: no red flags</span>}
       </div>
+      {attempt.review?.verdict === "suspicious" && (
+        <div className="rounded-md border border-line bg-surface p-2 text-xs leading-relaxed text-muted">
+          <p className="font-medium text-ink">Nano&apos;s review (advisory — it does not change the verified result)</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            {attempt.review.concerns.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {attempt.tests_passed === false && attempt.test_output && (
         <details className="text-xs text-muted">
           <summary className="cursor-pointer">test output</summary>
