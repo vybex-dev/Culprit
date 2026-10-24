@@ -60,6 +60,11 @@ log = structlog.get_logger("bisector")
 
 Verdict = Literal["regressed", "clean", "inconclusive"]
 
+# Share of runs that must fall on the median's side of the regression threshold
+# for the data to count as decisive despite a few outlier runs (see
+# _reconcile_with_arithmetic).
+DECISIVE_AGREEMENT = 0.75
+
 # Verbatim from AGENT_SPECS.md §1 — don't edit here without updating that doc
 # first (AGENTS.md #3).
 BISECTOR_SYSTEM_PROMPT = """You are a control-flow decision engine for a performance bisection tool.
@@ -462,15 +467,24 @@ def _reconcile_with_arithmetic(
 
     if nano.verdict == "inconclusive":
         # "Inconclusive" is only legitimate when noise could flip the verdict.
-        # If EVERY run (min..max) lands on the same side of the threshold as
-        # the median, the data is decisive no matter how noisy Nano thinks it
-        # is. Once we have a reasonable sample, override a spurious
+        # The verdict is about the MEDIAN, and a median only flips if a large
+        # share of runs sit on the other side of the threshold. A lone
+        # cold-start/GC outlier (e.g. one 80 ms run among ten ~10 ms runs) must
+        # not veto an otherwise unambiguous result — requiring min..max to
+        # agree did exactly that. So: once we have a reasonable sample, if a
+        # clear majority of runs (>= DECISIVE_AGREEMENT) land on the same
+        # side of the threshold as the median, override a spurious
         # "inconclusive" with the arithmetic result.
         if len(scores) < 5:
             return nano
         lo_pct = (min(scores) - baseline_score) / baseline_score * 100.0
         hi_pct = (max(scores) - baseline_score) / baseline_score * 100.0
-        decisive = hi_pct <= threshold_pct or lo_pct > threshold_pct
+        median_regressed = expected == "regressed"
+        agree = sum(
+            1 for s in scores
+            if ((s - baseline_score) / baseline_score * 100.0 > threshold_pct) == median_regressed
+        )
+        decisive = agree / len(scores) >= DECISIVE_AGREEMENT
         if not decisive:
             return nano
         log.warning(

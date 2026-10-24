@@ -276,3 +276,37 @@ def test_bisect_repo_end_to_end_real_sandbox_fake_nano(tmp_path, monkeypatch):
     order = {sha: i for i, sha in enumerate(shas)}
     positions = [order[e.commit] for e in result.timeline]
     assert positions == sorted(positions)  # timeline reads oldest -> newest, not visit order
+
+
+# ---------------------------------------------------------------------------
+# Regression: one cold-start outlier must not force "inconclusive" forever
+# ---------------------------------------------------------------------------
+
+def _reconcile(scores, verdict="inconclusive", baseline=9.874, threshold=100.0):
+    from bisector import NanoVerdict, _reconcile_with_arithmetic
+    nano = NanoVerdict(verdict=verdict, median_score=0.0, pct_change_from_baseline=0.0, additional_runs_needed=5)
+    return _reconcile_with_arithmetic(
+        nano, scores=scores, baseline_score=baseline, threshold_pct=threshold,
+        job_id="j", commit_sha="abc",
+    )
+
+
+def test_single_outlier_does_not_veto_clean_verdict():
+    # Real scores from a failed job: ten ~10ms runs + one 79.73ms outlier,
+    # baseline 9.874, threshold 100%. Median is +2% -> clean.
+    scores = [10.25, 79.73, 10.925, 10.244, 9.977, 9.884, 10.218, 10.077, 9.889, 9.898, 9.946]
+    out = _reconcile(scores)
+    assert out.verdict == "clean"
+    assert out.additional_runs_needed == 0
+
+
+def test_genuinely_noisy_data_stays_inconclusive():
+    # Runs split across the threshold -> noise really could flip the median.
+    scores = [10.0, 10.1, 30.0, 31.0, 10.2, 29.0, 9.9, 32.0]
+    assert _reconcile(scores, threshold=100.0, baseline=10.0).verdict == "inconclusive"
+    scores = [10.0, 21.0, 10.1, 25.0, 10.2, 22.0]  # 3 of 6 beyond +100%
+    assert _reconcile(scores, threshold=100.0, baseline=10.0).verdict == "inconclusive"
+
+
+def test_few_runs_still_defer_to_nano():
+    assert _reconcile([10.0, 90.0, 10.1], baseline=10.0).verdict == "inconclusive"
