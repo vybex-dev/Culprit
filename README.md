@@ -52,12 +52,12 @@ Here's what happened. Token Factory needs a payment card to activate an account,
 | --- | --- |
 | Git, bisecting, benchmarks, profiling, patching, citation checks, patch review, regression-test logic | **Really tested.** It runs for real in offline mode and in the test suite, using real git repos and real sandbox processes. |
 | Token Factory connection (chat calls, sandbox API, model-catalog check) | **Written from Nebius's public docs and tested with fake HTTP responses only.** |
-| Live Nemotron 3 Nano and Ultra answers | **Never seen.** Our prompts and JSON formats follow the docs, but we haven't confirmed them. |
-| Token Factory Sandboxes | **Never run.** The request and response shapes are unconfirmed. |
-| Nemotron model IDs | **Unconfirmed.** Nebius lists the family under more than one spelling. The `/preflight` check exists to sort this out on your first run. |
-| Tavily search | **Never run live.** We didn't use a key. |
+| Live Nemotron 3 Nano and Ultra answers | **Seen, but through NVIDIA's hosted API, not Nebius.** Our hosted demo calls both models at `integrate.api.nvidia.com` (the same OpenAI-style API shape). Replies parsed as the JSON we expect, with Nano taking about 1 to 1.6 s and Ultra about 5 to 7 s per call. We have not seen them on Nebius. |
+| Token Factory Sandboxes | **Never run.** The hosted demo uses the local sandbox. The request and response shapes are unconfirmed. |
+| Nemotron model IDs | **Work on NVIDIA's API:** `nvidia/nemotron-3.5-lightning-30b-a3b` (Nano) and `nvidia/nemotron-3-ultra-550b-a55b` (Ultra). **Unconfirmed on Nebius,** which lists the family under other spellings. The `/preflight` check exists to sort this out on your first run. |
+| Tavily search | **Real code, no stand-in.** It calls Tavily's API whenever a key is set, including in offline mode. [UPDATE after your test: say here whether you ran it with a key and saw sources in the terminal.] |
 
-**What this means in practice.** The Nemotron and Nebius code is real and complete, but nobody has watched it work yet. Anything marked "offline" in the app runs the same pipeline, except that the AI roles are replaced by small, clearly labeled stand-ins. Unless we say otherwise, every number and video we show comes from offline mode. Everything else in offline mode is real: the git history, the sandbox runs, and every benchmark time.
+**What this means in practice.** The Nemotron code has been seen working against NVIDIA's own API. The Nebius-specific parts (Token Factory endpoint, sandboxes, Nebius model IDs) are real and complete, but nobody has watched them work yet. Anything marked "offline" in the app runs the same pipeline, except that the AI roles are replaced by small, clearly labeled stand-ins. Unless we say otherwise, every number and video we show comes from offline mode. Everything else in offline mode is real: the git history, the sandbox runs, and every benchmark time.
 
 **If you have a Token Factory key,** follow [Running with real Nemotron and Token Factory](#running-with-real-nemotron-and-token-factory). If something breaks, please open an issue with the `/preflight` output and the event log. That would help us more than anything.
 
@@ -104,7 +104,7 @@ Culprit uses two NVIDIA Nemotron models on purpose. A small, fast one handles th
 
 All model calls go through Nebius Token Factory's OpenAI-compatible API (`https://api.tokenfactory.nebius.com/v1`). Token counts in the dashboard come from the API's own `usage` numbers, never from estimates.
 
-**We don't trust Nano blindly.** Culprit also does the plain math (is the median beyond the threshold?). If Nano and the math disagree, the math wins, and the terminal shows an `arithmetic override` so you can see it.
+**We don't trust Nano blindly.** Culprit also does the plain math (is the median beyond the threshold?). If Nano and the math disagree, the math wins, and the terminal shows an `arithmetic override` so you can see it. This happened for real on our hosted demo: Nano called a commit that was only about 1% slower "regressed", and the math overruled it.
 
 ### Token Factory Sandboxes
 
@@ -265,7 +265,8 @@ npm run dev                            # http://localhost:3000
 `CULPRIT_OFFLINE=1` lets anyone run the whole pipeline without keys.
 
 - **Real:** git, the sandbox processes, and every benchmark number.
-- **Stand-ins:** the three Nemotron roles (Nano verdict, Ultra diagnose, Ultra fix) and Tavily. A small deterministic stand-in in `backend/offline.py` plays their part, and the UI says so everywhere.
+- **Stand-ins:** the Nemotron roles (Nano verdict, Ultra diagnose, Ultra fix, and the test writer and patch reviewer). A small deterministic stand-in in `backend/offline.py` plays their part, and the UI says so everywhere.
+- **Tavily is not faked.** If `TAVILY_API_KEY` is set, Culprit makes real Tavily searches even in offline mode. Without a key, the search step is skipped and the terminal says so.
 
 Real evaluations should use live mode.
 

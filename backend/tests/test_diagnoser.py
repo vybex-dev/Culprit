@@ -267,3 +267,47 @@ def test_normalize_diff_line_strips_leading_marker_but_not_file_header():
     assert diagnoser._normalize_diff_line("+    order.line_items = x") == "order.line_items = x"
     assert diagnoser._normalize_diff_line("--- a/orders.py") == "--- a/orders.py"
     assert diagnoser._normalize_diff_line("+++ b/orders.py") == "+++ b/orders.py"
+
+
+# ---------------------------------------------------------------------------
+# _prune_context_citations — one stray unchanged-context citation must not sink
+# an otherwise verified diagnosis (seen live: model cited ` for order in orders:`)
+# ---------------------------------------------------------------------------
+
+CTX_DIFF = (
+    "diff --git a/app/summary.py b/app/summary.py\n"
+    "--- a/app/summary.py\n"
+    "+++ b/app/summary.py\n"
+    "@@ -1,6 +1,4 @@\n"
+    " def get_order_summary(db, customer_id):\n"
+    "     orders = db.query(\"orders\", customer_id=customer_id)\n"
+    "-    items = db.query_in(\"line_items\", \"order_id\", ids)\n"
+    "     for order in orders:\n"
+    "+        order[\"line_items\"] = db.query(\"line_items\", order_id=order[\"id\"])\n"
+)
+
+
+def _diag(cited):
+    return diagnoser.DiagnosisResult(category="n_plus_one", explanation="x", cited_lines=cited, confidence="high")
+
+
+def test_prune_drops_unchanged_context_but_keeps_changed_lines():
+    d = _diag(['+        order["line_items"] = db.query("line_items", order_id=order["id"])',
+               "     for order in orders:"])
+    assert not diagnoser._verify_cited_lines(d.cited_lines, CTX_DIFF)
+    dropped = diagnoser._prune_context_citations(d, CTX_DIFF)
+    assert dropped == ["     for order in orders:"]
+    assert diagnoser._verify_cited_lines(d.cited_lines, CTX_DIFF)
+
+
+def test_prune_never_rescues_a_line_that_is_not_in_the_diff():
+    d = _diag(['+        order["line_items"] = db.query("line_items", order_id=order["id"])',
+               "this_never_appears_anywhere()"])
+    assert diagnoser._prune_context_citations(d, CTX_DIFF) == []
+    assert not diagnoser._verify_cited_lines(d.cited_lines, CTX_DIFF)
+
+
+def test_prune_requires_at_least_one_changed_line():
+    d = _diag(["     for order in orders:"])
+    assert diagnoser._prune_context_citations(d, CTX_DIFF) == []
+    assert not diagnoser._verify_cited_lines(d.cited_lines, CTX_DIFF)

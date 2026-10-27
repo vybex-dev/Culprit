@@ -463,6 +463,7 @@ function describePoint(ev: LogEvent): TermRow {
       });
     }
     case "citation.retry":
+    case "citation.pruned":
     case "citation.downgrade":
       return base(ev, { glyph: "warn", tone: "warn" });
     case "tavily.skipped":

@@ -118,14 +118,17 @@ lines from the diff — never cite the profile there."""
 
 # Appended (not merged into the constant above) only on the citation retry —
 # same pattern as models.py's own _RETRY_NUDGE, one level up the stack.
-CITATION_RETRY_ADDENDUM = """Your previous response's cited_lines did not verify: none of them matched
-an actual line in the diff you were given. Every entry in cited_lines must
-be an exact line (or exact substring of a line) taken verbatim from the
-diff — not a paraphrase or a reconstruction from memory. The input now
-includes previous_response_with_unverified_citation showing what you
-returned last time. If you genuinely cannot point to specific lines that
-support a confident category, return category "other" instead and explain
-why in the explanation field — that is an honest, acceptable answer."""
+CITATION_RETRY_ADDENDUM = """Your previous response's cited_lines did not fully verify: at least one entry
+did not match a CHANGED line of the diff you were given. Only lines that start
+with "+" (added) or "-" (removed) can be cited. Lines that start with a space
+are unchanged context and are NOT citable. Every entry in cited_lines must be
+an exact line (or exact substring of a line) taken verbatim from the diff — not
+a paraphrase or a reconstruction from memory. The input now includes
+previous_response_with_unverified_citation, with the entries that failed listed
+under unverified_lines. Cite fewer lines if needed: one or two exact changed
+lines are enough. If you genuinely cannot point to specific lines that support
+a confident category, return category "other" instead and explain why in the
+explanation field — that is an honest, acceptable answer."""
 
 
 class DiagnoserError(Exception):
@@ -254,6 +257,30 @@ def _cited_line_flags(cited_lines: list[str], diff: str) -> list[bool]:
     return flags
 
 
+def _prune_context_citations(diagnosis: "DiagnosisResult", diff: str) -> list[str]:
+    """If a non-'other' diagnosis cites some verified CHANGED lines plus some lines
+    that are real but UNCHANGED context lines of the diff, drops only those context
+    lines and returns them (empty list = nothing pruned). This is deliberately
+    narrow: a citation that is not in the diff at all is never pruned (it still
+    fails verification), and at least one citation must verify as a changed line.
+    Rationale: one stray context line used to sink an otherwise correct diagnosis,
+    downgrading it to 'other' and skipping the fix stage entirely."""
+    if diagnosis.category == "other" or not diagnosis.cited_lines:
+        return []
+    flags = _cited_line_flags(diagnosis.cited_lines, diff)
+    if all(flags) or not any(flags):
+        return []
+    context_norm = {
+        l[1:].strip() for l in diff.splitlines()
+        if l[:1] == " " and l[1:].strip()
+    }
+    bad = [c for c, f in zip(diagnosis.cited_lines, flags) if not f]
+    if not all(_normalize_diff_line(c) in context_norm for c in bad):
+        return []  # something cited is not in the diff at all -> leave it to fail
+    diagnosis.cited_lines = [c for c, f in zip(diagnosis.cited_lines, flags) if f]
+    return bad
+
+
 def _verify_cited_lines(cited_lines: list[str], diff: str) -> bool:
     """True only if EVERY entry in cited_lines verifies against diff (see
     _cited_line_flags). An empty cited_lines list never verifies: per
@@ -330,6 +357,11 @@ def diagnose(
     )
     diagnosis = _validate_schema(result.parsed, guilty_commit_sha=guilty_commit_sha)
     diagnosis.diff = diff
+    _pruned = _prune_context_citations(diagnosis, diff)
+    if _pruned:
+        rep.emit("citation.pruned", "ultra",
+                 f"dropped {len(_pruned)} cited line(s) that are unchanged context, kept the changed ones",
+                 dropped=_pruned)
 
     def _emit_citation_check(d: DiagnosisResult, attempt: int) -> None:
         if d.category == "other":
@@ -362,6 +394,9 @@ def diagnose(
             **base_payload,
             "previous_response_with_unverified_citation": {
                 "category": diagnosis.category, "cited_lines": diagnosis.cited_lines,
+                "unverified_lines": [
+                    c for c, f in zip(diagnosis.cited_lines, _cited_line_flags(diagnosis.cited_lines, diff)) if not f
+                ],
             },
         }
         result = call_nemotron(
@@ -371,6 +406,11 @@ def diagnose(
         )
         diagnosis = _validate_schema(result.parsed, guilty_commit_sha=guilty_commit_sha)
         diagnosis.diff = diff
+        _pruned = _prune_context_citations(diagnosis, diff)
+        if _pruned:
+            rep.emit("citation.pruned", "ultra",
+                     f"dropped {len(_pruned)} cited line(s) that are unchanged context, kept the changed ones",
+                     dropped=_pruned)
         _emit_citation_check(diagnosis, 2)
 
         if diagnosis.category != "other" and not _verify_cited_lines(diagnosis.cited_lines, diff):
