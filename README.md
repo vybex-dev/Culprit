@@ -46,7 +46,7 @@
 
 We could not get access to Nebius Token Factory during the hackathon. **So Culprit has never been run against a live Nebius account.** We'd rather tell you that up front than have you find out.
 
-Here's what happened. Token Factory needs a payment card to activate an account, and our team has no card the platform accepts. We asked the Nebius team on the hackathon Discord. They told us some countries and regions aren't supported yet, that the card requirement stays, and that they can't verify people by hand. That's outside the organizers' control, so we're simply being clear about what it means for this project.
+Here's what happened. Token Factory needs a payment card to activate an account, and I'm a college student without one. I asked the Nebius team on the hackathon Discord whether this could be handled another way. The answer was that the card requirement applies to everyone and that they can't verify people by hand. I understand why they have that rule, so I'm simply being clear about what it means for this project.
 
 | Part of the project | Status |
 | --- | --- |
@@ -475,7 +475,7 @@ make check              # tests + production build
 
 | Requirement | Where it's covered |
 | --- | --- |
-| Runs on Nebius Token Factory with at least one NVIDIA open-source model | Built for it (Nemotron 3 Nano + Ultra, Token Factory Sandboxes), but **not run live because we couldn't get access.** See [Read this first](#read-this-first-what-we-could-and-couldnt-test). |
+| Runs on Nebius Token Factory with at least one NVIDIA open-source model | Built for it (Nemotron 3 Nano + Ultra, Token Factory Sandboxes), but **not run live because I couldn't activate a Token Factory account (it needs a payment card).** See [Read this first](#read-this-first-what-we-could-and-couldnt-test). |
 | README explains Nemotron and Nebius usage | [Which AI models we use, and why](#which-ai-models-we-use-and-why) |
 | Clear run instructions | [Quick start](#quick-start-no-api-keys-needed) and [Running with real Nemotron and Token Factory](#running-with-real-nemotron-and-token-factory) |
 | Open-source license visible at the top | [MIT](LICENSE) |
