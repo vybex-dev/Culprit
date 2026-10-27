@@ -24,23 +24,45 @@
 
 ## Table of contents
 
-1. [The problem](#the-problem)
-2. [What Culprit does](#what-culprit-does)
-3. [How Culprit uses NVIDIA Nemotron, Nebius and Tavily](#how-culprit-uses-nvidia-nemotron-nebius-and-tavily)
-4. [How it works](#how-it-works)
-5. [The dashboard](#the-dashboard)
-6. [Honesty guarantees](#honesty-guarantees)
-7. [Quick start](#quick-start)
-8. [Running with real Nemotron + Token Factory](#running-with-real-nemotron--token-factory)
-9. [Configuration](#configuration)
-10. [Using Culprit on your own repository](#using-culprit-on-your-own-repository)
-11. [API reference](#api-reference)
-12. [Architecture & repository layout](#architecture--repository-layout)
-13. [Testing](#testing)
-14. [Hackathon submission notes](#hackathon-submission-notes)
-15. [Known limitations](#known-limitations)
-16. [Security notes](#security-notes)
-17. [Contributing](#contributing) · [License](#license)
+1. [Nebius access and validation status](#nebius-access-and-validation-status)
+2. [The problem](#the-problem)
+3. [What Culprit does](#what-culprit-does)
+4. [How Culprit uses NVIDIA Nemotron, Nebius and Tavily](#how-culprit-uses-nvidia-nemotron-nebius-and-tavily)
+5. [How it works](#how-it-works)
+6. [The dashboard](#the-dashboard)
+7. [Honesty guarantees](#honesty-guarantees)
+8. [Quick start](#quick-start)
+9. [Running with real Nemotron + Token Factory](#running-with-real-nemotron--token-factory)
+10. [Configuration](#configuration)
+11. [Using Culprit on your own repository](#using-culprit-on-your-own-repository)
+12. [API reference](#api-reference)
+13. [Architecture & repository layout](#architecture--repository-layout)
+14. [Testing](#testing)
+15. [Hackathon submission notes](#hackathon-submission-notes)
+16. [Known limitations](#known-limitations)
+17. [Security notes](#security-notes)
+18. [Contributing](#contributing) · [License](#license)
+
+---
+
+## Nebius access and validation status
+
+**Please read this first.** We were not able to obtain Nebius Token Factory API access during the hackathon, so Culprit has **never been run against a live Nebius account**.
+
+Token Factory account activation requires a payment card. Our team members are in regions where we have no card the platform accepts. We raised this with the Nebius team on the hackathon Discord; the answer was that some countries and regions are currently not supported, that the card requirement stays in place, and that manual verification is not possible. We understand this is outside the organizers' immediate control, and we are documenting the consequences here rather than hiding them.
+
+|                                                                                                  | Status                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Git, bisection, benchmarks, profiling, patching, citation checks, patch review, guard-test logic | **Exercised for real** in offline mode, and by the backend test suite on real git repositories and real sandbox subprocesses           |
+| Token Factory HTTP surface (chat completions, sandbox API, model-catalog preflight)              | **Implemented from Nebius's public documentation and tested with mocked HTTP only**                                                    |
+| Live Nemotron 3 Nano / Ultra responses                                                           | **Not observed.** Prompts, JSON contracts and the `reasoning_content` fallback are written to the documented behaviour but unconfirmed |
+| Token Factory Sandboxes (`TokenFactorySandbox`)                                                  | **Not run.** Request and response shapes are unconfirmed                                                                               |
+| Nemotron model IDs                                                                               | **Unconfirmed.** Nebius lists the family under more than one spelling; `GET /preflight` exists to settle this on first run             |
+| Tavily grounding                                                                                 | Not run live (no key was used)                                                                                                         |
+
+**What this means for judging.** The Nemotron/Nebius integration is real, complete code with a defined contract, but its live behaviour is unproven. Everything labelled offline in the UI and in reports runs the same pipeline with labelled deterministic stand-ins for the model roles (see [What "offline mode" is](#what-offline-mode-is--and-isnt)). The numbers and videos we show come from that mode unless explicitly stated otherwise.
+
+**Running it for real.** If you have a Token Factory key, the path is: [Running with real Nemotron + Token Factory](#running-with-real-nemotron--token-factory). Open `/new`, resolve anything `/preflight` flags (model IDs first), then run. If something in the live path breaks, an issue with the `/preflight` output and the failing event log is the most useful report we could receive.
 
 ---
 
@@ -80,10 +102,10 @@ This section is the hackathon's required call-out of _where_ each technology is 
 
 Culprit uses **two Nemotron models, deliberately tiered** — model routing is part of the design, not an afterthought:
 
-| Model                            | Role                                                                                                                                                                                   | Why this model                                                                                                                                    |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Nemotron 3 Nano** (30B-A3B)    | **Bisector control flow.** For every benchmarked commit it returns `clean` / `regressed` / `inconclusive (run more)`, plus how many extra runs to collect. **File triage.** On a guilty commit touching 4+ files, it ranks the files most-likely-cause first so size caps cut the least likely ones (order only; nothing hidden). **Patch reviewer.** A further job: it screens every candidate fix and flags patches that look tuned to the benchmark, hard-code results, or drop checks (advisory — see below). | High-frequency, latency-sensitive judgements — the small, fast model is the right tool. **Nano makes most of the model calls** (about 70% in the bundled demo).                  |
-| **Nemotron 3 Ultra** (550B-A55B) | **Reasoning.** Three steps: the **Diagnoser** (root-cause category + cited lines, long diff + file context), the **Fixer** (exact-text edits, retried with failure feedback) and, once a fix is verified, the **guard-test writer** (a call-count regression test the sandbox must prove). | The only steps that need deep reasoning and a long context window, so the large model is spent only there.                                        |
+| Model                            | Role                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Why this model                                                                                                                                                  |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Nemotron 3 Nano** (30B-A3B)    | **Bisector control flow.** For every benchmarked commit it returns `clean` / `regressed` / `inconclusive (run more)`, plus how many extra runs to collect. **File triage.** On a guilty commit touching 4+ files, it ranks the files most-likely-cause first so size caps cut the least likely ones (order only; nothing hidden). **Patch reviewer.** A further job: it screens every candidate fix and flags patches that look tuned to the benchmark, hard-code results, or drop checks (advisory — see below). | High-frequency, latency-sensitive judgements — the small, fast model is the right tool. **Nano makes most of the model calls** (about 70% in the bundled demo). |
+| **Nemotron 3 Ultra** (550B-A55B) | **Reasoning.** Three steps: the **Diagnoser** (root-cause category + cited lines, long diff + file context), the **Fixer** (exact-text edits, retried with failure feedback) and, once a fix is verified, the **guard-test writer** (a call-count regression test the sandbox must prove).                                                                                                                                                                                                                        | The only steps that need deep reasoning and a long context window, so the large model is spent only there.                                                      |
 
 All inference goes through the **Nebius Token Factory** OpenAI-compatible API (`https://api.tokenfactory.nebius.com/v1`). Token counts shown in the dashboard come from the API's own `usage` block — never estimated.
 
@@ -196,13 +218,13 @@ These are enforced in code (see `AGENTS.md`, rule 1), not just promised:
 - A fix that doesn't resolve the regression is reported as **unresolved**, with all attempts — never dressed up.
 - A patch that crashes is a failed attempt with **no score**.
 - Profile evidence is **measured or absent** — a non-Python benchmark, a crash, or a backend that can't profile means "no profile" (shown as skipped), never an estimate; it can't fail a job. With no profile, the Diagnoser and Fixer prompts are exactly what they were before. `CULPRIT_PROFILE=0` turns it off.
-- **A fast-but-broken patch is not a fix.** If you pass a `test_command`, it must be green on the regressed commit (so it can actually judge) *and* on the patched code — otherwise the attempt is rejected, the failure output is fed back to Nemotron, and the job never says "verified". If the suite is already red or can't run, Culprit says so and verifies on performance only.
-- **Best-of-N can't launder a bad fix.** With several candidates per round, only a candidate whose own sandbox re-run came back within threshold (and green on your tests, if you gave a test command) is eligible; the winner is the best *measured* one among those. A candidate that doesn't apply or crashes is shown with no score. If none verifies, the job is unresolved and lists every attempt. Locally, candidates are still *proposed* in parallel but *benchmarked one at a time*, since concurrent benchmarks on one CPU would corrupt each other's timings.
+- **A fast-but-broken patch is not a fix.** If you pass a `test_command`, it must be green on the regressed commit (so it can actually judge) _and_ on the patched code — otherwise the attempt is rejected, the failure output is fed back to Nemotron, and the job never says "verified". If the suite is already red or can't run, Culprit says so and verifies on performance only.
+- **Best-of-N can't launder a bad fix.** With several candidates per round, only a candidate whose own sandbox re-run came back within threshold (and green on your tests, if you gave a test command) is eligible; the winner is the best _measured_ one among those. A candidate that doesn't apply or crashes is shown with no score. If none verifies, the job is unresolved and lists every attempt. Locally, candidates are still _proposed_ in parallel but _benchmarked one at a time_, since concurrent benchmarks on one CPU would corrupt each other's timings.
 - **The patch review is advisory and never decides anything.** Nano screens every candidate for the ways a "fix" can fool a benchmark (special-casing its inputs, hard-coding results, skipping work or checks, swallowing errors). Its verdict is shown next to the attempt, in the terminal and in the PR report — but it cannot mark a fix verified, un-verify one, or pick the winner; the sandbox does all of that, and a failed review simply means "no review". Two rules are plain code, no model: with a `test_command`, a patch that edits a test file is rejected before it is run; a patch that edits the benchmark script itself is always flagged (it changes what is measured). `CULPRIT_PATCH_REVIEW=0` turns off the Nano screen only; the rules stay on.
-- **A regression test is shipped only if it was proven.** It must fail (by assertion) on the regressed commit *and* pass with the fix in real sandbox runs; a test that passes on the regression, crashes, or fails with the fix is discarded and the job says no test was found. It is also run on the last good commit and flagged if it isn't green there. This stage is extra evidence — it can never fail a job or change its result. `CULPRIT_GUARD_TEST=0` turns it off.
+- **A regression test is shipped only if it was proven.** It must fail (by assertion) on the regressed commit _and_ pass with the fix in real sandbox runs; a test that passes on the regression, crashes, or fails with the fix is discarded and the job says no test was found. It is also run on the last good commit and flagged if it isn't green there. This stage is extra evidence — it can never fail a job or change its result. `CULPRIT_GUARD_TEST=0` turns it off.
 - A diagnosis whose cited lines aren't in the diff is retried once, then downgraded to `other`.
 - Tavily results below the relevance floor are dropped, not cited.
-- Infrastructure failures fail the job **loudly**. Only a *commit* that can't be built or run is skipped — visibly, and never given a verdict.
+- Infrastructure failures fail the job **loudly**. Only a _commit_ that can't be built or run is skipped — visibly, and never given a verdict.
 - Offline mode (below) is **labelled on every event, job record, page and PR report**, and is never selected implicitly — a missing API key in normal mode is a hard error.
 
 ---
@@ -297,33 +319,33 @@ Misconfiguration shows up _before_ a run, not three minutes into one. This matte
 
 All settings are environment variables (read from `backend/.env`; real shell variables win). See [`backend/.env.example`](backend/.env.example).
 
-| Variable                                               | Default                                         | Purpose                                                                |
-| ------------------------------------------------------ | ----------------------------------------------- | ---------------------------------------------------------------------- |
-| `CULPRIT_OFFLINE`                                      | unset                                           | `1` = no keys needed; real git/benchmarks, labelled stand-in models    |
-| `NEBIUS_API_KEY`                                       | —                                               | Token Factory key (inference **and** sandboxes)                        |
-| `NEBIUS_API_BASE_URL`                                  | `https://api.tokenfactory.nebius.com/v1`        | inference endpoint                                                     |
-| `NEMOTRON_ULTRA_MODEL_ID`                              | `nvidia/nemotron-3-ultra-550b-a55b`             | diagnose + fix model                                                   |
-| `NEMOTRON_NANO_MODEL_ID`                               | see `backend/models.py`                         | bisector model — **confirm with `/preflight`**                         |
-| `USE_TOKEN_FACTORY`                                    | unset                                           | `1` = run benchmarks in Token Factory Sandboxes; unset = local sandbox |
-| `CONTREE_PROJECT`                                      | —                                               | sandbox project ID (`NEBIUS_AI_PROJECT` also accepted)                 |
-| `CONTREE_IMAGE`                                        | —                                               | sandbox image UUID or `tag:…` (needs python3 + git + pip)              |
-| `CONTREE_URL`                                          | `https://api.tokenfactory.nebius.com/sandboxes` | sandbox API base                                                       |
-| `TAVILY_API_KEY`                                       | —                                               | grounding search                                                       |
-| `TAVILY_MIN_SCORE`                                     | `0.2`                                           | results scored below this are dropped, never cited                     |
-| `REGRESSION_THRESHOLD_PCT`                             | `15`                                            | slowdown vs baseline that counts as "regressed"                        |
-| `BENCHMARK_N_RUNS`                                     | `5`                                             | runs per probed commit                                                 |
-| `BISECT_PARALLELISM`                                   | `auto`                                          | commits probed at once: `auto` = 3 on Token Factory, 1 locally; a number (max 6) forces it |
+| Variable                                               | Default                                         | Purpose                                                                                                            |
+| ------------------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `CULPRIT_OFFLINE`                                      | unset                                           | `1` = no keys needed; real git/benchmarks, labelled stand-in models                                                |
+| `NEBIUS_API_KEY`                                       | —                                               | Token Factory key (inference **and** sandboxes)                                                                    |
+| `NEBIUS_API_BASE_URL`                                  | `https://api.tokenfactory.nebius.com/v1`        | inference endpoint                                                                                                 |
+| `NEMOTRON_ULTRA_MODEL_ID`                              | `nvidia/nemotron-3-ultra-550b-a55b`             | diagnose + fix model                                                                                               |
+| `NEMOTRON_NANO_MODEL_ID`                               | see `backend/models.py`                         | bisector model — **confirm with `/preflight`**                                                                     |
+| `USE_TOKEN_FACTORY`                                    | unset                                           | `1` = run benchmarks in Token Factory Sandboxes; unset = local sandbox                                             |
+| `CONTREE_PROJECT`                                      | —                                               | sandbox project ID (`NEBIUS_AI_PROJECT` also accepted)                                                             |
+| `CONTREE_IMAGE`                                        | —                                               | sandbox image UUID or `tag:…` (needs python3 + git + pip)                                                          |
+| `CONTREE_URL`                                          | `https://api.tokenfactory.nebius.com/sandboxes` | sandbox API base                                                                                                   |
+| `TAVILY_API_KEY`                                       | —                                               | grounding search                                                                                                   |
+| `TAVILY_MIN_SCORE`                                     | `0.2`                                           | results scored below this are dropped, never cited                                                                 |
+| `REGRESSION_THRESHOLD_PCT`                             | `15`                                            | slowdown vs baseline that counts as "regressed"                                                                    |
+| `BENCHMARK_N_RUNS`                                     | `5`                                             | runs per probed commit                                                                                             |
+| `BISECT_PARALLELISM`                                   | `auto`                                          | commits probed at once: `auto` = 3 on Token Factory, 1 locally; a number (max 6) forces it                         |
 | `FIX_CANDIDATES`                                       | `auto`                                          | different fixes proposed per round: `auto` = 3 on Token Factory, 1 locally; a number (max 5) forces it. Rounds ≤ 3 |
-| `CULPRIT_TRIAGE`                                       | `1`                                             | `0` turns off Nano's file ranking of a big guilty commit |
-| `CULPRIT_PATCH_REVIEW`                                 | `1`                                             | `0` turns off Nano's advisory patch review (the test-file rule and benchmark-edit flag always apply) |
-| `AUTO_RANGE_COMMITS`                                   | `30`                                            | when no range is given, search the last N first-parent commits         |
-| `MAX_CONCURRENT_JOBS`                                  | `2`                                             | extra jobs genuinely wait in `queued`                                  |
-| `CORS_ALLOWED_ORIGINS`                                 | `http://localhost:3000`                         | comma-separated dashboard origins                                      |
-| `HOST` / `PORT`                                        | `127.0.0.1` / `8000`                            | server bind                                                            |
-| `CULPRIT_DB`                                           | SQLite at `backend/.data/culprit.db`            | set `memory` for no persistence                                        |
-| `CULPRIT_DATA_DIR`                                     | `backend/.data`                                 | where the SQLite DB lives                                              |
-| `CULPRIT_ALLOW_LOCAL_REPOS`                            | unset                                           | allow local-path repos while `USE_TOKEN_FACTORY=1`                     |
-| `CULPRIT_MAX_DIFF_CHARS` / `CULPRIT_MAX_CONTEXT_CHARS` | `150000` / `300000`                             | caps so one huge diff can't blow the model's context                   |
+| `CULPRIT_TRIAGE`                                       | `1`                                             | `0` turns off Nano's file ranking of a big guilty commit                                                           |
+| `CULPRIT_PATCH_REVIEW`                                 | `1`                                             | `0` turns off Nano's advisory patch review (the test-file rule and benchmark-edit flag always apply)               |
+| `AUTO_RANGE_COMMITS`                                   | `30`                                            | when no range is given, search the last N first-parent commits                                                     |
+| `MAX_CONCURRENT_JOBS`                                  | `2`                                             | extra jobs genuinely wait in `queued`                                                                              |
+| `CORS_ALLOWED_ORIGINS`                                 | `http://localhost:3000`                         | comma-separated dashboard origins                                                                                  |
+| `HOST` / `PORT`                                        | `127.0.0.1` / `8000`                            | server bind                                                                                                        |
+| `CULPRIT_DB`                                           | SQLite at `backend/.data/culprit.db`            | set `memory` for no persistence                                                                                    |
+| `CULPRIT_DATA_DIR`                                     | `backend/.data`                                 | where the SQLite DB lives                                                                                          |
+| `CULPRIT_ALLOW_LOCAL_REPOS`                            | unset                                           | allow local-path repos while `USE_TOKEN_FACTORY=1`                                                                 |
+| `CULPRIT_MAX_DIFF_CHARS` / `CULPRIT_MAX_CONTEXT_CHARS` | `150000` / `300000`                             | caps so one huge diff can't blow the model's context                                                               |
 
 Frontend: `NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:8000`) in `frontend/.env.local`.
 
@@ -361,20 +383,20 @@ Then watch `/job/<job_id>`, download `/jobs/<job_id>/report.md` and `/jobs/<job_
 
 ## API reference
 
-| Endpoint                            | Description                                                              |
-| ----------------------------------- | ------------------------------------------------------------------------ |
+| Endpoint                            | Description                                                                |
+| ----------------------------------- | -------------------------------------------------------------------------- |
 | `POST /analyze`                     | `{repo_url, benchmark_command, commit_range?, test_command?}` → `{job_id}` |
-| `POST /demo`                        | start a job on the bundled sample repo                                   |
-| `GET /jobs`                         | job history                                                              |
-| `GET /jobs/{id}`                    | full job state (+ derived `metrics`)                                     |
-| `GET /jobs/{id}/events?after=<seq>` | live, cursor-paged event stream → `{events, next, done, status}`         |
-| `POST /jobs/{id}/cancel`            | cooperative cancel (checked between probes, run rounds and fix attempts) |
-| `GET /jobs/{id}/report.md`          | PR-ready write-up                                                        |
-| `GET /jobs/{id}/fix.patch`          | the verified (or attempted) patch                                        |
-| `GET /jobs/{id}/guard-test.py`      | the regression test, only if proven red-on-regression / green-with-fix   |
-| `GET /config`                       | current mode (live / offline)                                            |
-| `GET /preflight`                    | readiness checks against the live model catalog                          |
-| `GET /health`                       | liveness                                                                 |
+| `POST /demo`                        | start a job on the bundled sample repo                                     |
+| `GET /jobs`                         | job history                                                                |
+| `GET /jobs/{id}`                    | full job state (+ derived `metrics`)                                       |
+| `GET /jobs/{id}/events?after=<seq>` | live, cursor-paged event stream → `{events, next, done, status}`           |
+| `POST /jobs/{id}/cancel`            | cooperative cancel (checked between probes, run rounds and fix attempts)   |
+| `GET /jobs/{id}/report.md`          | PR-ready write-up                                                          |
+| `GET /jobs/{id}/fix.patch`          | the verified (or attempted) patch                                          |
+| `GET /jobs/{id}/guard-test.py`      | the regression test, only if proven red-on-regression / green-with-fix     |
+| `GET /config`                       | current mode (live / offline)                                              |
+| `GET /preflight`                    | readiness checks against the live model catalog                            |
+| `GET /health`                       | liveness                                                                   |
 
 **Job statuses:** `queued → bisecting → diagnosing → fixing → done`, or `failed` / `cancelled`.
 **Final results:** `resolved` · `unresolved_diagnosis_only` · no regression in range.
@@ -455,13 +477,13 @@ make check              # tests + production build
 
 **Event:** [Nebius × NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/) · **Track:** Coding & Agentic Engineering
 
-| Requirement                                                   | Where it's met                                                                                                         |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Runs on Nebius Token Factory with ≥1 NVIDIA open-source model | Nemotron 3 Nano + Ultra via Token Factory; sandboxes via Token Factory                                                 |
-| README documents Nemotron / Nebius usage                      | [How Culprit uses NVIDIA Nemotron, Nebius and Tavily](#how-culprit-uses-nvidia-nemotron-nebius-and-tavily)             |
-| Clear run instructions                                        | [Quick start](#quick-start) · [Running with real Nemotron + Token Factory](#running-with-real-nemotron--token-factory) |
-| Open-source license visible at the top                        | [MIT](LICENSE)                                                                                                         |
-| Demo                                                          | Local build instructions above; 3-minute video script in [`docs/SUBMISSION.md`](docs/SUBMISSION.md)                    |
+| Requirement                                                   | Where it's met                                                                                                                                                                             |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Runs on Nebius Token Factory with ≥1 NVIDIA open-source model | Built for it (Nemotron 3 Nano + Ultra, Token Factory Sandboxes) but **not run live — no access obtained**; see [Nebius access and validation status](#nebius-access-and-validation-status) |
+| README documents Nemotron / Nebius usage                      | [How Culprit uses NVIDIA Nemotron, Nebius and Tavily](#how-culprit-uses-nvidia-nemotron-nebius-and-tavily)                                                                                 |
+| Clear run instructions                                        | [Quick start](#quick-start) · [Running with real Nemotron + Token Factory](#running-with-real-nemotron--token-factory)                                                                     |
+| Open-source license visible at the top                        | [MIT](LICENSE)                                                                                                                                                                             |
+| Demo                                                          | Local build instructions above; 3-minute video script in [`docs/SUBMISSION.md`](docs/SUBMISSION.md)                                                                                        |
 
 **Judging criteria mapping**
 
@@ -479,10 +501,10 @@ make check              # tests + production build
 
 Read these before trusting a result.
 
-- **Live Nebius path validation.** The live Token Factory path is covered by unit tests with mocked HTTP and checked against Nebius's published docs, but model IDs and sandbox response shapes are exactly what `GET /preflight` exists to confirm on first run against your account.
+- **Live Nebius path never validated.** We could not obtain Token Factory access (see [Nebius access and validation status](#nebius-access-and-validation-status)). The live path is covered by unit tests with mocked HTTP and written against Nebius's published docs; model IDs and sandbox response shapes are unconfirmed, and `GET /preflight` exists to settle them on first run against your account.
 - **One monotonic regression assumed** (clean … clean, regressed … regressed). Flaky or non-monotonic histories can mislead bisection; the scanner labels unmeasured commits as _inferred_ for this reason.
 - **Parallel probing trades sandbox runs for wall-clock time.** It uses up to `P` probes per round (some of which a sequential search would never have needed), and its timings are only trustworthy where probes are isolated — so the default is 1 on the local sandbox, and forcing more there prints a warning.
-- **Unrunnable commits are skipped, not scored.** A midpoint that can't be built or run (a failing install, a crashing benchmark) is stepped over like `git bisect skip`: the search probes its nearest runnable neighbour and the commit is shown as _skipped_ — neither measured nor assumed clean. If the skips leave *no* single commit that can be named, the job fails with the list of suspects instead of guessing. The baseline and the end of the range must still be runnable.
+- **Unrunnable commits are skipped, not scored.** A midpoint that can't be built or run (a failing install, a crashing benchmark) is stepped over like `git bisect skip`: the search probes its nearest runnable neighbour and the commit is shown as _skipped_ — neither measured nor assumed clean. If the skips leave _no_ single commit that can be named, the job fails with the list of suspects instead of guessing. The baseline and the end of the range must still be runnable.
 - **Noise is managed, not eliminated** (repeated runs + Nano/arithmetic cross-check). Very small regressions near the threshold need more runs.
 - **Python-first.** Depth on one ecosystem was chosen over breadth.
 - **Bundled demo is constructed.** The sample repo is a real git history with a real, measured regression, but it is a reproducible smoke test, not a substitute for real-OSS cases. `demo_cases/` holds templates for curated real-world regressions with verified ground truth.
